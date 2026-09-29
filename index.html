@@ -115,6 +115,13 @@
       color: #94a3b8;
       padding: 16px 0;
     }
+
+    .counter {
+      margin: 12px 0 0;
+      font-size: 0.9rem;
+      color: #64748b;
+      text-align: center;
+    }
   </style>
 </head>
 <body>
@@ -127,6 +134,7 @@
     </div>
 
     <ul id="task-list"></ul>
+    <p class="counter" id="counter"></p>
   </div>
 
   <script>
@@ -137,6 +145,7 @@
     const input = document.getElementById('task-input');
     const addBtn = document.getElementById('add-btn');
     const list = document.getElementById('task-list');
+    const counter = document.getElementById('counter');
 
     // --- Load saved tasks when the page opens ---
     loadTasks();
@@ -180,6 +189,14 @@
     // --- Draw the list from the tasks array ---
     function render() {
       list.innerHTML = ''; // wipe and rebuild (simple + fine at this size)
+
+      // --- Counter: computed from state each time, never stored ---
+      const left = tasks.filter(function (task) { return !task.done; }).length;
+      counter.textContent = tasks.length === 0
+        ? ''
+        : left === 0
+          ? 'All done! 🎉'
+          : left + (left === 1 ? ' task' : ' tasks') + ' left';
 
       if (tasks.length === 0) {
         list.innerHTML = '<li class="empty-message">No tasks yet — add one above!</li>';
