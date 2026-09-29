@@ -12,10 +12,12 @@
 
     body {
       font-family: system-ui, -apple-system, sans-serif; /* uses your device's own clean font */
-      background: #f1f5f9;
+      background: linear-gradient(135deg, #dbeafe, #fae8ff 55%, #fef3c7);
+      background-attachment: fixed; /* gradient stays put while scrolling */
       color: #1e293b;
       margin: 0;
       padding: 24px 16px;
+      min-height: 100vh;
     }
 
     .app {
@@ -36,21 +38,27 @@
     /* --- Input row --- */
     .input-row {
       display: flex;
+      flex-wrap: wrap; /* date picker drops below on narrow phones */
       gap: 8px;
       margin-bottom: 16px;
     }
 
     #task-input {
-      flex: 1; /* input takes all free space, button keeps its size */
+      flex: 1 1 160px; /* grow, shrink, min 160px before wrapping */
       padding: 10px 12px;
       font-size: 1rem;
       border: 1px solid #cbd5e1;
       border-radius: 8px;
     }
 
-    #task-input:focus {
-      outline: 2px solid #3b82f6;
-      border-color: #3b82f6;
+    #due-input {
+      padding: 10px 8px;
+      font-size: 0.95rem;
+      font-family: inherit;
+      color: #475569;
+      border: 1px solid #cbd5e1;
+      border-radius: 8px;
+      background: #fff;
     }
 
     #add-btn {
@@ -78,12 +86,53 @@
       display: flex;
       align-items: center;
       gap: 10px;
-      padding: 10px 4px;
-      border-bottom: 1px solid #e2e8f0;
+      padding: 10px 12px;
+      margin-bottom: 8px;
+      border-radius: 10px;
+      border-left: 6px solid #cbd5e1; /* color stripe = due-date status */
+      background: #f8fafc;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
+      animation: slide-in 0.25s ease-out; /* play once when the row appears */
+      transition: transform 0.15s ease, background 0.15s ease; /* smooth hover/toggle */
     }
 
-    #task-list li:last-child {
-      border-bottom: none;
+    #task-list li:hover {
+      transform: translateY(-1px); /* tiny lift on hover */
+    }
+
+    /* Color stripe + badge per due-date status */
+    #task-list li.due-today { border-color: #f59e0b; background: #fffbeb; }
+    #task-list li.due-soon { border-color: #3b82f6; background: #eff6ff; }
+    #task-list li.due-later { border-color: #22c55e; background: #f0fdf4; }
+    #task-list li.due-overdue { border-color: #ef4444; background: #fef2f2; }
+    #task-list li.due-none { border-color: #cbd5e1; }
+
+    #task-list li.completed {
+      opacity: 0.75;
+    }
+
+    /* Row entrance animation */
+    @keyframes slide-in {
+      from { opacity: 0; transform: translateY(-6px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    .due-badge {
+      font-size: 0.75rem;
+      font-weight: 600;
+      padding: 2px 8px;
+      border-radius: 999px; /* pill shape */
+      white-space: nowrap; /* date never wraps mid-text */
+    }
+
+    .due-today .due-badge { background: #fef3c7; color: #92400e; }
+    .due-soon .due-badge { background: #dbeafe; color: #1d4ed8; }
+    .due-later .due-badge { background: #dcfce7; color: #15803d; }
+    .due-overdue .due-badge { background: #fee2e2; color: #b91c1c; }
+
+    /* Respect users who prefer no motion */
+    @media (prefers-reduced-motion: reduce) {
+      #task-list li { animation: none; transition: none; }
     }
 
     .task-text {
@@ -130,6 +179,7 @@
 
     <div class="input-row">
       <input id="task-input" type="text" placeholder="What needs doing?" autocomplete="off">
+      <input id="due-input" type="date" aria-label="Due date (optional)">
       <button id="add-btn">Add</button>
     </div>
 
@@ -138,11 +188,13 @@
   </div>
 
   <script>
-    // --- Our data: a plain array of { text, done } objects ---
+    // --- Our data: a plain array of { text, done, due } objects ---
+    // due is a "YYYY-MM-DD" string or "" when no date was picked.
     let tasks = [];
 
     // --- Grab the elements we need ---
     const input = document.getElementById('task-input');
+    const dueInput = document.getElementById('due-input');
     const addBtn = document.getElementById('add-btn');
     const list = document.getElementById('task-list');
     const counter = document.getElementById('counter');
@@ -156,8 +208,9 @@
       const text = input.value.trim(); // trim() ignores "   "-only input
       if (text === '') return;         // do nothing on empty input
 
-      tasks.push({ text: text, done: false });
+      tasks.push({ text: text, done: false, due: dueInput.value });
       input.value = '';  // clear the box for the next task
+      dueInput.value = ''; // clear the date too
       input.focus();     // keep the cursor ready for fast typing
       saveTasks();
       render();
@@ -186,6 +239,40 @@
       render();
     });
 
+    // --- Due dates: compare calendar days, ignoring time of day ---
+    function dayString(date) {
+      return date.getFullYear() + '-' +
+        String(date.getMonth() + 1).padStart(2, '0') + '-' +
+        String(date.getDate()).padStart(2, '0');
+    }
+
+    // Returns one of: 'overdue' | 'today' | 'soon' | 'later' | 'none'
+    function dueStatus(task) {
+      if (!task.due) return 'none';
+      const today = dayString(new Date());
+      if (task.due < today) return 'overdue';
+      if (task.due === today) return 'today';
+      const soon = new Date();
+      soon.setDate(soon.getDate() + 3); // "soon" = next 3 days
+      if (task.due <= dayString(soon)) return 'soon';
+      return 'later';
+    }
+
+    function dueLabel(task) {
+      if (!task.due) return '';
+      const status = dueStatus(task);
+      // Show friendly words for near dates, short date otherwise.
+      // "2026-09-30" -> "30 Sep" (slice avoids timezone-shifted Date parsing)
+      const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+                      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+      const short = task.due.slice(8, 10).replace(/^0/, '') + ' ' +
+                    months[Number(task.due.slice(5, 7)) - 1];
+      if (status === 'overdue') return 'Overdue · ' + short;
+      if (status === 'today') return 'Today';
+      if (status === 'soon') return short;
+      return short;
+    }
+
     // --- Draw the list from the tasks array ---
     function render() {
       list.innerHTML = ''; // wipe and rebuild (simple + fine at this size)
@@ -206,6 +293,7 @@
       tasks.forEach(function (task, index) {
         const item = document.createElement('li');
         if (task.done) item.classList.add('completed');
+        item.classList.add('due-' + dueStatus(task)); // color stripe
         item.dataset.index = index; // remember position for clicks
 
         const checkbox = document.createElement('input');
@@ -217,12 +305,21 @@
         span.className = 'task-text';
         span.textContent = task.text; // textContent (not innerHTML) = safe from HTML injection
 
+        item.append(checkbox, span);
+
+        if (task.due) {
+          const badge = document.createElement('span');
+          badge.className = 'due-badge';
+          badge.textContent = dueLabel(task);
+          item.append(badge);
+        }
+
         const delBtn = document.createElement('button');
         delBtn.className = 'delete-btn';
         delBtn.textContent = '✕';
         delBtn.setAttribute('aria-label', 'Delete ' + task.text);
 
-        item.append(checkbox, span, delBtn);
+        item.append(delBtn);
         list.append(item);
       });
     }
@@ -238,6 +335,10 @@
       if (saved) {
         try {
           tasks = JSON.parse(saved);
+          // Migrate tasks saved before due dates existed.
+          tasks.forEach(function (task) {
+            if (!('due' in task)) task.due = '';
+          });
         } catch (e) {
           tasks = []; // corrupted data? start fresh rather than crash
         }
