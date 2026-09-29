@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>My To-Do List</title>
+  <style>
+    /* --- Page layout --- */
+    * {
+      box-sizing: border-box; /* padding/borders don't grow elements unexpectedly */
+    }
+
+    body {
+      font-family: system-ui, -apple-system, sans-serif; /* uses your device's own clean font */
+      background: #f1f5f9;
+      color: #1e293b;
+      margin: 0;
+      padding: 24px 16px;
+    }
+
+    .app {
+      max-width: 480px;   /* narrow column: readable on desktop... */
+      margin: 0 auto;     /* ...centered, and full-width on phones */
+      background: #ffffff;
+      border-radius: 12px;
+      box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08);
+      padding: 24px;
+    }
+
+    h1 {
+      margin: 0 0 16px;
+      font-size: 1.5rem;
+      text-align: center;
+    }
+
+    /* --- Input row --- */
+    .input-row {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 16px;
+    }
+
+    #task-input {
+      flex: 1; /* input takes all free space, button keeps its size */
+      padding: 10px 12px;
+      font-size: 1rem;
+      border: 1px solid #cbd5e1;
+      border-radius: 8px;
+    }
+
+    #task-input:focus {
+      outline: 2px solid #3b82f6;
+      border-color: #3b82f6;
+    }
+
+    #add-btn {
+      padding: 10px 16px;
+      font-size: 1rem;
+      background: #3b82f6;
+      color: #fff;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+    }
+
+    #add-btn:hover {
+      background: #2563eb;
+    }
+
+    /* --- Task list --- */
+    #task-list {
+      list-style: none; /* remove bullet points */
+      margin: 0;
+      padding: 0;
+    }
+
+    #task-list li {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 4px;
+      border-bottom: 1px solid #e2e8f0;
+    }
+
+    #task-list li:last-child {
+      border-bottom: none;
+    }
+
+    .task-text {
+      flex: 1;
+      cursor: pointer; /* hints that clicking toggles complete */
+    }
+
+    /* Completed tasks get the strikethrough */
+    #task-list li.completed .task-text {
+      text-decoration: line-through;
+      color: #94a3b8;
+    }
+
+    .delete-btn {
+      background: none;
+      border: none;
+      font-size: 1.1rem;
+      cursor: pointer;
+      color: #94a3b8;
+      padding: 4px 8px;
+    }
+
+    .delete-btn:hover {
+      color: #ef4444;
+    }
+
+    .empty-message {
+      text-align: center;
+      color: #94a3b8;
+      padding: 16px 0;
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <h1>My To-Do List</h1>
+
+    <div class="input-row">
+      <input id="task-input" type="text" placeholder="What needs doing?" autocomplete="off">
+      <button id="add-btn">Add</button>
+    </div>
+
+    <ul id="task-list"></ul>
+  </div>
+
+  <script>
+    // --- Our data: a plain array of { text, done } objects ---
+    let tasks = [];
+
+    // --- Grab the elements we need ---
+    const input = document.getElementById('task-input');
+    const addBtn = document.getElementById('add-btn');
+    const list = document.getElementById('task-list');
+
+    // --- Load saved tasks when the page opens ---
+    loadTasks();
+    render();
+
+    // --- Add a task (shared by the button and the Enter key) ---
+    function addTask() {
+      const text = input.value.trim(); // trim() ignores "   "-only input
+      if (text === '') return;         // do nothing on empty input
+
+      tasks.push({ text: text, done: false });
+      input.value = '';  // clear the box for the next task
+      input.focus();     // keep the cursor ready for fast typing
+      saveTasks();
+      render();
+    }
+
+    addBtn.addEventListener('click', addTask);
+
+    input.addEventListener('keydown', function (event) {
+      if (event.key === 'Enter') addTask();
+    });
+
+    // --- Toggle complete when the task text is clicked ---
+    // --- Delete when the ✕ button is clicked ---
+    // One listener on the <ul> handles every item (even future ones).
+    list.addEventListener('click', function (event) {
+      const item = event.target.closest('li'); // the <li> that was clicked
+      if (!item) return;
+      const index = Number(item.dataset.index); // which task in the array?
+
+      if (event.target.classList.contains('delete-btn')) {
+        tasks.splice(index, 1);          // remove 1 item at that position
+      } else {
+        tasks[index].done = !tasks[index].done; // flip true/false
+      }
+      saveTasks();
+      render();
+    });
+
+    // --- Draw the list from the tasks array ---
+    function render() {
+      list.innerHTML = ''; // wipe and rebuild (simple + fine at this size)
+
+      if (tasks.length === 0) {
+        list.innerHTML = '<li class="empty-message">No tasks yet — add one above!</li>';
+        return;
+      }
+
+      tasks.forEach(function (task, index) {
+        const item = document.createElement('li');
+        if (task.done) item.classList.add('completed');
+        item.dataset.index = index; // remember position for clicks
+
+        const checkbox = document.createElement('input');
+        checkbox.type = 'checkbox';
+        checkbox.checked = task.done;
+        checkbox.tabIndex = -1; // clicks go through the <ul> listener; keep tab order simple
+
+        const span = document.createElement('span');
+        span.className = 'task-text';
+        span.textContent = task.text; // textContent (not innerHTML) = safe from HTML injection
+
+        const delBtn = document.createElement('button');
+        delBtn.className = 'delete-btn';
+        delBtn.textContent = '✕';
+        delBtn.setAttribute('aria-label', 'Delete ' + task.text);
+
+        item.append(checkbox, span, delBtn);
+        list.append(item);
+      });
+    }
+
+    // --- Persistence: localStorage keeps data after refresh ---
+    // localStorage only stores strings, so we convert with JSON.
+    function saveTasks() {
+      localStorage.setItem('todo-tasks', JSON.stringify(tasks));
+    }
+
+    function loadTasks() {
+      const saved = localStorage.getItem('todo-tasks');
+      if (saved) {
+        try {
+          tasks = JSON.parse(saved);
+        } catch (e) {
+          tasks = []; // corrupted data? start fresh rather than crash
+        }
+      }
+    }
+  </script>
+</body>
+</html>
