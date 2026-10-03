@@ -2,7 +2,10 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
+  <meta name="theme-color" content="#3b82f6">
   <title>My To-Do List</title>
+  <link rel="manifest" href="./manifest.json">
+  <link rel="icon" href="./icon.svg" type="image/svg+xml">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap">
@@ -59,6 +62,17 @@
       --shadow-sm: 0px 10px 20px 0px hsl(0, 0, 0 / 0.50), 0px 1px 2px -1px hsl(0, 0, 0 / 0.50);
     }
 
+    body.dark #task-list li.due-overdue { background: #450a0a; border-left-color: var(--chart-4); }
+    body.dark #task-list li.due-today,
+    body.dark #task-list li.due-tomorrow { background: #451a03; border-left-color: var(--chart-3); }
+    body.dark #task-list li.due-soon { background: #172554; border-left-color: var(--chart-1); }
+    body.dark #task-list li.due-later { background: #052e16; border-left-color: var(--chart-2); }
+    body.dark .due-overdue .due-badge { background: #7f1d1d; color: #fecaca; }
+    body.dark .due-today .due-badge,
+    body.dark .due-tomorrow .due-badge { background: #78350f; color: #fde68a; }
+    body.dark .due-soon .due-badge { background: #1e3a8a; color: #bfdbfe; }
+    body.dark .due-later .due-badge { background: #14532d; color: #bbf7d0; }
+
     /* --- Base --- */
     * {
       box-sizing: border-box;
@@ -77,6 +91,100 @@
     .app {
       max-width: 560px;
       margin: 0 auto;
+      container-type: inline-size; /* container queries adapt composer, not viewport */
+    }
+
+    /* Dim list while editing; highlight rows holding hovered tag */
+    #task-list:has(.edit-input) { opacity: 0.85; }
+    #task-list li:has(.tag-chip:hover) { border-color: var(--ring); }
+
+    /* View Transitions: smooth morphs, honor reduced motion */
+    ::view-transition-old(root),
+    ::view-transition-new(root) { animation-duration: 0.18s; }
+    @media (prefers-reduced-motion: reduce) {
+      ::view-transition-old(root),
+      ::view-transition-new(root) { animation: none; }
+    }
+
+    /* Toolbar: icon buttons under filters */
+    .toolbar {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      justify-content: center;
+      margin-bottom: 12px;
+    }
+
+    .toolbar button {
+      padding: 5px 12px;
+      font-family: inherit;
+      font-size: 0.8rem;
+      font-weight: 500;
+      background: var(--card);
+      color: var(--muted-foreground);
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      cursor: pointer;
+      box-shadow: var(--shadow-xs);
+    }
+
+    .toolbar button:hover {
+      color: var(--foreground);
+      background: var(--accent);
+    }
+
+    .toolbar button[aria-pressed="true"] {
+      background: var(--primary);
+      color: var(--primary-foreground);
+      border-color: transparent;
+    }
+
+    /* Narrow container: stack composer vertically */
+    @container (max-width: 420px) {
+      .input-row { flex-direction: column; }
+      #add-btn { width: 100%; }
+      .toolbar { justify-content: stretch; }
+      .toolbar button { flex: 1 1 auto; }
+    }
+
+    /* Help popover (native top-layer) */
+    #help-popover {
+      max-width: 320px;
+      padding: 16px 18px;
+      font: inherit;
+      font-size: 0.9rem;
+      color: var(--foreground);
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow-sm);
+    }
+
+    #help-popover::backdrop {
+      background: rgba(0, 0, 0, 0.25);
+    }
+
+    #help-popover kbd {
+      padding: 1px 6px;
+      font-family: ui-monospace, monospace;
+      font-size: 0.8rem;
+      background: var(--muted);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+    }
+
+    /* Print: list only, black on white */
+    @media print {
+      body { background: #fff; padding: 0; }
+      .input-row, .filters, .toolbar, .tag-bar, #theme-btn,
+      .edit-btn, .delete-btn, .drag-handle, #help-popover { display: none; }
+      .app { max-width: 100%; }
+      #task-list li {
+        box-shadow: none;
+        border: 1px solid #999;
+        break-inside: avoid;
+      }
+      .counter { color: #000; }
     }
 
     /* --- Header --- */
@@ -421,6 +529,20 @@
     <div class="tag-bar" id="tag-bar">
       <button id="tag-clear"></button>
     </div>
+    <div class="toolbar">
+      <button id="copy-btn" title="Copy tasks as text">Copy</button>
+      <button id="paste-btn" title="Paste tasks from clipboard">Paste</button>
+      <button id="share-btn" title="Share via OS sheet">Share</button>
+      <button id="export-btn" title="Download tasks as JSON">Export</button>
+      <button id="import-btn" title="Import tasks from JSON">Import</button>
+      <button id="notify-btn" aria-pressed="false" title="Due-date reminders">Remind</button>
+      <button id="help-btn" title="Keyboard shortcuts (?)">?</button>
+    </div>
+    <input type="file" id="import-file" accept=".json,application/json" hidden>
+    <div id="help-popover" popover>
+      <strong>Shortcuts</strong>
+      <p><kbd>/</kbd> new task · <kbd>Alt</kbd>+<kbd>↑</kbd>/<kbd>↓</kbd> reorder<br><kbd>Enter</kbd> save edit · <kbd>Esc</kbd> cancel</p>
+    </div>
     <ul id="task-list"></ul>
     <p class="counter" id="counter" aria-live="polite"></p>
   </div>
@@ -441,9 +563,39 @@
     const themeBtn = document.getElementById('theme-btn');
     const tagBar = document.getElementById('tag-bar');
     const tagClear = document.getElementById('tag-clear');
+    // PWA: register service worker when served over http(s), skip on file://.
+    if ('serviceWorker' in navigator && /^https?:/.test(location.protocol)) {
+      navigator.serviceWorker.register('./sw.js').catch(function () { /* offline optional */ });
+    }
     // --- Load saved tasks when the page opens ---
     loadTasks();
     render();
+    requestPersist();
+    updateBadge();
+
+    // Best-effort: ask browser to persist storage (may return false).
+    function requestPersist() {
+      try {
+        if (navigator.storage && navigator.storage.persist) {
+          navigator.storage.persist().then(function (ok) {
+            if (!ok) note('Storage may be cleared by the browser — use Export for backup.');
+          });
+        }
+      } catch (e) { /* best-effort only */ }
+    }
+
+    // Transient note in counter line (restored on next render).
+    function note(text) { counter.textContent = text; }
+
+    // Render with View Transitions when available, plain otherwise.
+    function renderView() {
+      if (document.startViewTransition &&
+          !window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+        document.startViewTransition(function () { render(); });
+      } else {
+        render();
+      }
+    }
 
      // --- Theme: stored choice wins, else OS preference ---
      initTheme();
@@ -490,10 +642,156 @@
 
     tagClear.addEventListener('click', function () {
       activeTag = '';
-      render();
+      renderView();
     });
 
+    // --- Toolbar: clipboard, share, export/import, reminders, help ---
+    const copyBtn = document.getElementById('copy-btn');
+    const pasteBtn = document.getElementById('paste-btn');
+    const shareBtn = document.getElementById('share-btn');
+    const exportBtn = document.getElementById('export-btn');
+    const importBtn = document.getElementById('import-btn');
+    const importFile = document.getElementById('import-file');
+    const notifyBtn = document.getElementById('notify-btn');
+    const helpBtn = document.getElementById('help-btn');
+    const helpPopover = document.getElementById('help-popover');
 
+    function tasksAsText() {
+      return tasks.map(function (t) {
+        return (t.done ? '[x] ' : '[ ] ') + t.text + (t.due ? ' (' + t.due + ')' : '');
+      }).join('\n');
+    }
+
+    // Copy visible list as text; fallback prompt when clipboard blocked.
+    copyBtn.addEventListener('click', function () {
+      const text = tasksAsText();
+      if (!text) { note('Nothing to copy yet.'); return; }
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text).then(
+          function () { note('Copied ' + tasks.length + ' tasks.'); },
+          function () { window.prompt('Copy tasks:', text); });
+      } else {
+        window.prompt('Copy tasks:', text);
+      }
+    });
+
+    // Paste: one task per line ("[x] text (YYYY-MM-DD)" understood).
+    pasteBtn.addEventListener('click', function () {
+      if (!(navigator.clipboard && navigator.clipboard.readText)) {
+        note('Clipboard read unavailable — type tasks or use Import.');
+        return;
+      }
+      navigator.clipboard.readText().then(function (text) {
+        importLines(text.split(/\r?\n/));
+      }, function () {
+        note('Clipboard blocked — allow access or use Import.');
+      });
+    });
+
+    function importLines(lines) {
+      let added = 0;
+      lines.forEach(function (line) {
+        const text = line.trim().replace(/^\[[ xX]\]\s*/, '');
+        if (!text) return;
+        const m = text.match(/\(?(\d{4}-\d{2}-\d{2})\)?\s*$/);
+        let due = '';
+        let body = text;
+        if (m && isValidDue(m[1])) { due = m[1]; body = text.slice(0, m.index).trim(); }
+        if (!body) return;
+        tasks.push({ text: body, done: /^\[x\]/i.test(line.trim()), due: due });
+        added++;
+      });
+      if (added) { saveTasks(); renderView(); note('Added ' + added + ' tasks.'); }
+      else note('No tasks found in pasted text.');
+      updateBadge();
+    }
+
+    // Share via OS sheet; hide button where unsupported.
+    if (!navigator.share) shareBtn.hidden = true;
+    shareBtn.addEventListener('click', function () {
+      const text = tasksAsText();
+      if (!text) { note('Nothing to share yet.'); return; }
+      navigator.share({ title: 'My To-Do List', text: text }).catch(function () { /* dismissed */ });
+    });
+
+    // Export JSON download; import validates shape like loadTasks.
+    exportBtn.addEventListener('click', function () {
+      const blob = new Blob([JSON.stringify(tasks, null, 2)], { type: 'application/json' });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = 'todo-tasks.json';
+      a.click();
+      setTimeout(function () { URL.revokeObjectURL(a.href); }, 1000);
+    });
+
+    importBtn.addEventListener('click', function () { importFile.click(); });
+    importFile.addEventListener('change', function () {
+      const f = importFile.files[0];
+      if (!f) return;
+      const reader = new FileReader();
+      reader.onload = function () {
+        try {
+          const parsed = JSON.parse(reader.result);
+          if (!Array.isArray(parsed) || !parsed.every(validTask)) throw new Error('bad shape');
+          tasks = parsed.map(function (t) { return { text: t.text, done: t.done, due: t.due || '' }; });
+          saveTasks(); renderView(); note('Imported ' + tasks.length + ' tasks.');
+        } catch (e) {
+          note('Import failed — not a todo-tasks JSON file.');
+        }
+        importFile.value = '';
+        updateBadge();
+      };
+      reader.readAsText(f);
+    });
+
+    // Reminders: foreground-only Notification on load when enabled.
+    if (!('Notification' in window)) notifyBtn.hidden = true;
+    else if (Notification.permission === 'granted' && localStorage.getItem('todo-remind') === 'on') {
+      notifyBtn.setAttribute('aria-pressed', 'true');
+      notifyBtn.textContent = 'Remind on';
+      fireReminder();
+    }
+    notifyBtn.addEventListener('click', function () {
+      if (Notification.permission === 'granted') {
+        toggleRemind(localStorage.getItem('todo-remind') !== 'on');
+      } else if (Notification.permission === 'denied') {
+        note('Notifications blocked — enable in browser settings.');
+      } else {
+        Notification.requestPermission().then(function (p) {
+          if (p === 'granted') { toggleRemind(true); fireReminder(); }
+          else note('Reminders need notification permission.');
+        });
+      }
+    });
+
+    function toggleRemind(on) {
+      localStorage.setItem('todo-remind', on ? 'on' : 'off');
+      notifyBtn.setAttribute('aria-pressed', on ? 'true' : 'false');
+      notifyBtn.textContent = on ? 'Remind on' : 'Remind';
+      if (on) note('Reminders on — overdue/today ping on open.');
+    }
+
+    function dueSoonTasks() {
+      return tasks.filter(function (t) {
+        return !t.done && (dueStatus(t) === 'overdue' || dueStatus(t) === 'today');
+      });
+    }
+
+    function fireReminder() {
+      try {
+        const due = dueSoonTasks();
+        if (due.length) new Notification(due.length + ' tasks due', { body: due.slice(0, 3).map(function (t) { return t.text; }).join('\n') });
+      } catch (e) { /* notifications best-effort */ }
+    }
+
+    // Help popover + global shortcuts (/ focus, ? help).
+    helpBtn.addEventListener('click', function () { helpPopover.togglePopover(); });
+    document.addEventListener('keydown', function (event) {
+      const typing = /^(INPUT|TEXTAREA)$/.test(document.activeElement.tagName) ||
+        document.activeElement.isContentEditable;
+      if (event.key === '/' && !typing) { event.preventDefault(); input.focus(); }
+      else if (event.key === '?' && !typing) { helpPopover.togglePopover(); }
+    });
     // --- Add a task (shared by the button and the Enter key) ---
     function addTask() {
       const text = input.value.trim(); // trim() ignores "   "-only input
@@ -504,7 +802,7 @@
       dueInput.value = ''; // clear the date too
       input.focus();     // keep the cursor ready for fast typing
       saveTasks();
-      render();
+      renderView();
     }
 
     addBtn.addEventListener('click', addTask);
@@ -522,7 +820,7 @@
         b.classList.toggle('active', b === btn);
         b.setAttribute('aria-pressed', b === btn ? 'true' : 'false');
       });
-      render();
+      renderView();
     });
 
     // --- Edit: ✎ swaps text for input; Enter/blur saves, Escape cancels ---
@@ -545,7 +843,7 @@
           if (text !== '') task.text = text; // empty edit = keep old text
           saveTasks();
         }
-        render();
+        renderView();
         if (!save) input.focus();
       };
       edit.addEventListener('keydown', function (e) {
@@ -565,7 +863,7 @@
       const chip = event.target.closest('.tag-chip');
       if (chip) {
         activeTag = activeTag === chip.dataset.tag ? '' : chip.dataset.tag;
-        render();
+        renderView();
         return;
       }
       const editBtn = event.target.closest('.edit-btn');
@@ -586,7 +884,7 @@
         return; // badge / empty space: no action
       }
       saveTasks();
-      render();
+      renderView();
     });
 
     // --- Drag reorder: HTML5 DnD + keyboard (Alt+Arrow) ---
@@ -631,16 +929,70 @@
       event.preventDefault();
       const index = Number(item.dataset.index);
       if (!Number.isInteger(index) || index < 0 || index >= tasks.length) return;
-      const to = event.key === 'ArrowUp' ? index - 1 : index + 1;
-      // Keep focus on same row after re-render.
+      moveTask(index, event.key === 'ArrowUp' ? index - 1 : index + 1);
       const rows = list.querySelectorAll('li[data-index]');
       for (const row of rows) {
-        if (Number(row.dataset.index) === Math.max(0, Math.min(tasks.length - 1, to))) {
+        if (Number(row.dataset.index) === Math.max(0, Math.min(tasks.length - 1, event.key === 'ArrowUp' ? index - 1 : index + 1))) {
           const btn = row.querySelector('.edit-btn');
           if (btn) btn.focus();
         }
       }
     });
+
+    // Touch reorder: long-press handle (~400ms) then drag vertically.
+    let touchDrag = -1;
+    let touchTimer = 0;
+    let touchY = 0;
+    list.addEventListener('pointerdown', function (event) {
+      if (event.pointerType === 'mouse') return;
+      const handle = event.target.closest('.drag-handle');
+      if (!handle) return;
+      const item = handle.closest('li');
+      if (!item || !('index' in item.dataset)) return;
+      const index = Number(item.dataset.index);
+      touchY = event.clientY;
+      clearTimeout(touchTimer);
+      touchTimer = setTimeout(function () {
+        touchDrag = index;
+        item.classList.add('drag-over');
+        if (navigator.vibrate) { try { navigator.vibrate(20); } catch (e) {} }
+      }, 400);
+    });
+    list.addEventListener('pointermove', function (event) {
+      if (touchDrag < 0 || event.pointerType === 'mouse') return;
+      event.preventDefault();
+      const el = document.elementFromPoint(event.clientX, event.clientY);
+      const over = el && el.closest ? el.closest('li[data-index]') : null;
+      document.querySelectorAll('#task-list li.drag-over').forEach(function (row) {
+        row.classList.remove('drag-over');
+      });
+      if (over) over.classList.add('drag-over');
+      touchY = event.clientY;
+    });
+    function endTouchDrag(commit) {
+      clearTimeout(touchTimer);
+      if (touchDrag < 0) return;
+      const el = document.elementFromPoint(window.innerWidth / 2, Math.max(0, touchY));
+      const over = el && el.closest ? el.closest('li[data-index]') : null;
+      const from = touchDrag;
+      touchDrag = -1;
+      document.querySelectorAll('#task-list li.drag-over').forEach(function (row) {
+        row.classList.remove('drag-over');
+      });
+      if (commit && over) moveTask(from, Number(over.dataset.index));
+    }
+    list.addEventListener('pointerup', function () { endTouchDrag(true); });
+    list.addEventListener('pointercancel', function () { endTouchDrag(false); });
+
+    // App badge: open-task count when installed (Chromium-only, best-effort).
+    function updateBadge() {
+      try {
+        if (!('setAppBadge' in navigator)) return;
+        const open = tasks.filter(function (t) { return !t.done; }).length;
+        if (open > 0) navigator.setAppBadge(open);
+        else if ('clearAppBadge' in navigator) navigator.clearAppBadge();
+      } catch (e) { /* badges best-effort */ }
+    }
 
     function moveTask(from, to) {
       if (!Number.isInteger(from) || !Number.isInteger(to)) return;
@@ -650,10 +1002,9 @@
       const moved = tasks.splice(from, 1)[0];
       tasks.splice(to, 0, moved);
       saveTasks();
-      render();
+      renderView();
+      updateBadge();
     }
-
-    // --- Due dates: compare calendar days, ignoring time of day ---
     function dayString(date) {
       return date.getFullYear() + '-' +
         String(date.getMonth() + 1).padStart(2, '0') + '-' +
@@ -794,6 +1145,7 @@
       } catch (e) {
         counter.textContent = 'Could not save — storage full or blocked. Changes kept for this session.';
       }
+      updateBadge();
     }
 
     function validTask(task) {
