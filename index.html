@@ -916,6 +916,7 @@
     }
 
     // Help popover + global shortcuts (/ focus, ? help, j/k row nav).
+    helpBtn.addEventListener('click', function () { helpPopover.togglePopover(); });
     document.addEventListener('keydown', function (event) {
       const typing = /^(INPUT|TEXTAREA)$/.test(document.activeElement.tagName) ||
         document.activeElement.isContentEditable;
@@ -1088,6 +1089,10 @@
         return;
       }
       const editBtn = event.target.closest('.edit-btn');
+      const item = event.target.closest('li'); // the <li> that was clicked
+      if (!item || !('index' in item.dataset)) return;
+      const index = Number(item.dataset.index); // which task in the array?
+      if (!Number.isInteger(index) || index < 0 || index >= tasks.length) return;
 
       if (event.target.classList.contains('delete-btn')) {
         tasks.splice(index, 1);          // remove 1 item at that position
