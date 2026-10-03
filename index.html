@@ -102,6 +102,7 @@
 
     /* Color stripe + badge per due-date status */
     #task-list li.due-today { border-color: #f59e0b; background: #fffbeb; }
+    #task-list li.due-tomorrow { border-color: #f59e0b; background: #fffbeb; }
     #task-list li.due-soon { border-color: #3b82f6; background: #eff6ff; }
     #task-list li.due-later { border-color: #22c55e; background: #f0fdf4; }
     #task-list li.due-overdue { border-color: #ef4444; background: #fef2f2; }
@@ -126,6 +127,7 @@
     }
 
     .due-today .due-badge { background: #fef3c7; color: #92400e; }
+    .due-tomorrow .due-badge { background: #fef3c7; color: #92400e; }
     .due-soon .due-badge { background: #dbeafe; color: #1d4ed8; }
     .due-later .due-badge { background: #dcfce7; color: #15803d; }
     .due-overdue .due-badge { background: #fee2e2; color: #b91c1c; }
@@ -329,6 +331,22 @@
       background: #312e81;
       color: #c7d2fe;
     }
+
+    body.dark #task-list li.due-today { border-color: #f59e0b; background: #451a03; }
+    body.dark #task-list li.due-tomorrow { border-color: #f59e0b; background: #451a03; }
+    body.dark #task-list li.due-soon { border-color: #3b82f6; background: #172554; }
+    body.dark #task-list li.due-later { border-color: #22c55e; background: #052e16; }
+    body.dark #task-list li.due-overdue { border-color: #ef4444; background: #450a0a; }
+    body.dark .due-today .due-badge { background: #78350f; color: #fde68a; }
+    body.dark .due-tomorrow .due-badge { background: #78350f; color: #fde68a; }
+    body.dark .due-soon .due-badge { background: #1e3a8a; color: #bfdbfe; }
+    body.dark .due-later .due-badge { background: #14532d; color: #bbf7d0; }
+    body.dark .due-overdue .due-badge { background: #7f1d1d; color: #fecaca; }
+
+    :focus-visible {
+      outline: 2px solid #3b82f6;
+      outline-offset: 2px;
+    }
   </style>
 </head>
 <body>
@@ -339,20 +357,20 @@
     </div>
 
     <div class="input-row">
-      <input id="task-input" type="text" placeholder="What needs doing?" autocomplete="off">
+      <input id="task-input" type="text" placeholder="What needs doing? Try milk #home" autocomplete="off" aria-label="New task">
       <input id="due-input" type="date" aria-label="Due date (optional)">
       <button id="add-btn">Add</button>
     </div>
     <div class="filters">
-      <button data-filter="all" class="active">All</button>
-      <button data-filter="active">Active</button>
-      <button data-filter="completed">Completed</button>
+      <button data-filter="all" class="active" aria-pressed="true">All</button>
+      <button data-filter="active" aria-pressed="false">Active</button>
+      <button data-filter="completed" aria-pressed="false">Completed</button>
     </div>
     <div class="tag-bar" id="tag-bar">
       <button id="tag-clear"></button>
     </div>
     <ul id="task-list"></ul>
-    <p class="counter" id="counter"></p>
+    <p class="counter" id="counter" aria-live="polite"></p>
   </div>
 
   <script>
@@ -450,6 +468,7 @@
       filter = btn.dataset.filter;
       document.querySelectorAll('.filters button').forEach(function (b) {
         b.classList.toggle('active', b === btn);
+        b.setAttribute('aria-pressed', b === btn ? 'true' : 'false');
       });
       render();
     });
@@ -499,15 +518,16 @@
       }
       const editBtn = event.target.closest('.edit-btn');
       const item = event.target.closest('li'); // the <li> that was clicked
-      if (!item) return;
+      if (!item || !('index' in item.dataset)) return;
       const index = Number(item.dataset.index); // which task in the array?
+      if (!Number.isInteger(index) || index < 0 || index >= tasks.length) return;
 
       if (event.target.classList.contains('delete-btn')) {
         tasks.splice(index, 1);          // remove 1 item at that position
       } else if (editBtn) {
         startEdit(item, index);
         return; // no re-render; startEdit handles it
-      } else if (event.target.classList.contains('task-text') ||
+      } else if (event.target.closest('.task-text') ||
                  event.target.type === 'checkbox') {
         tasks[index].done = !tasks[index].done; // flip true/false
       } else {
@@ -555,11 +575,11 @@
     list.addEventListener('keydown', function (event) {
       if (!event.altKey || (event.key !== 'ArrowUp' && event.key !== 'ArrowDown')) return;
       const item = event.target.closest('li');
-      if (!item) return;
+      if (!item || !('index' in item.dataset)) return;
       event.preventDefault();
       const index = Number(item.dataset.index);
+      if (!Number.isInteger(index) || index < 0 || index >= tasks.length) return;
       const to = event.key === 'ArrowUp' ? index - 1 : index + 1;
-      moveTask(index, to);
       // Keep focus on same row after re-render.
       const rows = list.querySelectorAll('li[data-index]');
       for (const row of rows) {
@@ -571,6 +591,7 @@
     });
 
     function moveTask(from, to) {
+      if (!Number.isInteger(from) || !Number.isInteger(to)) return;
       if (from < 0 || from >= tasks.length) return;
       to = Math.max(0, Math.min(tasks.length - 1, to));
       if (from === to) return;
@@ -587,12 +608,25 @@
         String(date.getDate()).padStart(2, '0');
     }
 
-    // Returns one of: 'overdue' | 'today' | 'soon' | 'later' | 'none'
+    // Returns one of: 'overdue' | 'today' | 'tomorrow' | 'soon' | 'later' | 'none'
+    function isValidDue(due) {
+      if (typeof due !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(due)) return false;
+      const y = Number(due.slice(0, 4));
+      const m = Number(due.slice(5, 7));
+      const d = Number(due.slice(8, 10));
+      if (m < 1 || m > 12 || d < 1 || d > 31) return false;
+      const dt = new Date(y, m - 1, d);
+      return dt.getFullYear() === y && dt.getMonth() === m - 1 && dt.getDate() === d;
+    }
+
     function dueStatus(task) {
-      if (!task.due) return 'none';
+      if (!isValidDue(task.due)) return 'none';
       const today = dayString(new Date());
       if (task.due < today) return 'overdue';
       if (task.due === today) return 'today';
+      const tomorrow = new Date();
+      tomorrow.setDate(tomorrow.getDate() + 1);
+      if (task.due === dayString(tomorrow)) return 'tomorrow';
       const soon = new Date();
       soon.setDate(soon.getDate() + 3); // "soon" = next 3 days
       if (task.due <= dayString(soon)) return 'soon';
@@ -600,7 +634,7 @@
     }
 
     function dueLabel(task) {
-      if (!task.due) return '';
+      if (!isValidDue(task.due)) return '';
       const status = dueStatus(task);
       // Show friendly words for near dates, short date otherwise.
       // "2026-09-30" -> "30 Sep" (slice avoids timezone-shifted Date parsing)
@@ -610,7 +644,13 @@
                     months[Number(task.due.slice(5, 7)) - 1];
       if (status === 'overdue') return 'Overdue · ' + short;
       if (status === 'today') return 'Today';
-      if (status === 'soon') return short;
+      if (status === 'tomorrow') return 'Tomorrow';
+      if (status === 'soon') {
+        const weekdays = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+        const dt = new Date(Number(task.due.slice(0, 4)),
+          Number(task.due.slice(5, 7)) - 1, Number(task.due.slice(8, 10)));
+        return weekdays[dt.getDay()] + ' · ' + short;
+      }
       return short;
     }
 
@@ -629,8 +669,8 @@
       const visible = tasks
         .map(function (task, index) { return { task: task, index: index }; })
         .filter(function (entry) {
-          if (filter === 'active') return !entry.task.done;
-          if (filter === 'completed') return entry.task.done;
+          if (filter === 'active' && entry.task.done) return false;
+          if (filter === 'completed' && !entry.task.done) return false;
           if (activeTag && taskTags(entry.task.text).indexOf(activeTag) < 0) return false;
           return true;
         });
@@ -638,7 +678,7 @@
       if (activeTag) tagClear.textContent = activeTag + ' ✕';
 
       if (tasks.length === 0) {
-        list.innerHTML = '<li class="empty-message">No tasks yet — add one above!</li>';
+        list.innerHTML = '<li class="empty-message">No tasks yet — try “Buy milk #home” with a due date!</li>';
         return;
       }
 
@@ -664,7 +704,7 @@
         const checkbox = document.createElement('input');
         checkbox.type = 'checkbox';
         checkbox.checked = task.done;
-        checkbox.tabIndex = -1; // clicks go through the <ul> listener; keep tab order simple
+        checkbox.setAttribute('aria-label', 'Mark ' + task.text + (task.done ? ' active' : ' done'));
 
         const span = document.createElement('span');
         span.className = 'task-text';
@@ -672,10 +712,11 @@
 
         item.append(handle, checkbox, span);
 
-        if (task.due) {
+        if (isValidDue(task.due)) {
           const badge = document.createElement('span');
           badge.className = 'due-badge';
           badge.textContent = dueLabel(task);
+          badge.title = task.due; // full date on hover
           item.append(badge);
         }
 
@@ -696,21 +737,33 @@
     // --- Persistence: localStorage keeps data after refresh ---
     // localStorage only stores strings, so we convert with JSON.
     function saveTasks() {
-      localStorage.setItem('todo-tasks', JSON.stringify(tasks));
+      try {
+        localStorage.setItem('todo-tasks', JSON.stringify(tasks));
+      } catch (e) {
+        counter.textContent = 'Could not save — storage full or blocked. Changes kept for this session.';
+      }
+    }
+
+    function validTask(task) {
+      return task && typeof task.text === 'string' &&
+        typeof task.done === 'boolean' &&
+        (typeof task.due === 'string' || typeof task.due === 'undefined');
     }
 
     function loadTasks() {
       const saved = localStorage.getItem('todo-tasks');
-      if (saved) {
-        try {
-          tasks = JSON.parse(saved);
-          // Migrate tasks saved before due dates existed.
-          tasks.forEach(function (task) {
-            if (!('due' in task)) task.due = '';
-          });
-        } catch (e) {
-          tasks = []; // corrupted data? start fresh rather than crash
-        }
+      if (!saved) return;
+      try {
+        const parsed = JSON.parse(saved);
+        if (!Array.isArray(parsed) || !parsed.every(validTask)) throw new Error('bad shape');
+        tasks = parsed;
+        // Migrate tasks saved before due dates existed.
+        tasks.forEach(function (task) {
+          if (!('due' in task)) task.due = '';
+        });
+      } catch (e) {
+        try { localStorage.setItem('todo-tasks-corrupt', saved); } catch (q) { /* keep going */ }
+        tasks = []; // corrupted data? start fresh rather than crash
       }
     }
   </script>
