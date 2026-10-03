@@ -90,9 +90,110 @@
     }
 
     .app {
-      max-width: 560px;
+      max-width: 880px;
       margin: 0 auto;
       container-type: inline-size; /* container queries adapt composer, not viewport */
+    }
+
+    .layout {
+      display: flex;
+      gap: 16px;
+      align-items: flex-start;
+    }
+
+    /* Sidebar: view nav (Todoist-style left rail) */
+    .sidebar {
+      flex: 0 0 200px;
+      position: sticky;
+      top: 16px;
+      background: var(--card);
+      color: var(--card-foreground);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow-xs);
+      padding: 10px;
+    }
+
+    .sidebar button {
+      display: flex;
+      width: 100%;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 10px;
+      font-family: inherit;
+      font-size: 0.88rem;
+      background: transparent;
+      color: var(--muted-foreground);
+      border: none;
+      border-radius: calc(var(--radius) - 4px);
+      cursor: pointer;
+      text-align: left;
+    }
+
+    .sidebar button:hover {
+      background: var(--accent);
+      color: var(--foreground);
+    }
+
+    .sidebar button.active {
+      background: var(--accent);
+      color: var(--foreground);
+      font-weight: 600;
+    }
+
+    .sidebar .count {
+      margin-left: auto;
+      font-size: 0.75rem;
+      background: var(--muted);
+      color: var(--muted-foreground);
+      border-radius: 999px;
+      padding: 0 7px;
+    }
+
+    .sidebar .side-label {
+      margin: 8px 10px 4px;
+      font-size: 0.72rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--muted-foreground);
+    }
+
+    .main {
+      flex: 1;
+      min-width: 0;
+    }
+
+    /* Priority flags (Todoist P1-P3): colored dot on each row */
+    .prio {
+      flex: none;
+      width: 18px;
+      height: 18px;
+      border-radius: 999px;
+      border: 1.5px solid var(--border);
+      background: transparent;
+      cursor: pointer;
+      padding: 0;
+    }
+
+    .prio[data-prio="3"] { border-color: #ef4444; }
+    .prio[data-prio="2"] { border-color: #f59e0b; }
+    .prio[data-prio="1"] { border-color: #3b82f6; }
+    .prio[data-prio="3"]::after { content: ""; display: block; width: 8px; height: 8px; margin: 3.5px; border-radius: 999px; background: #ef4444; }
+    .prio[data-prio="2"]::after { content: ""; display: block; width: 8px; height: 8px; margin: 3.5px; border-radius: 999px; background: #f59e0b; }
+    .prio[data-prio="1"]::after { content: ""; display: block; width: 8px; height: 8px; margin: 3.5px; border-radius: 999px; background: #3b82f6; }
+
+    /* Group headers (Today / Upcoming / Later) */
+    .group-head {
+      margin: 14px 2px 8px;
+      font-size: 0.8rem;
+      font-weight: 650;
+      color: var(--foreground);
+    }
+
+    @container (max-width: 640px) {
+      .layout { flex-direction: column; }
+      .sidebar { position: static; flex: none; width: 100%; }
     }
 
     /* Dim list while editing; highlight rows holding hovered tag */
@@ -517,47 +618,65 @@
       <button id="theme-btn" aria-label="Toggle dark mode">🌙</button>
     </div>
 
-    <div class="input-row">
-      <input id="task-input" type="text" placeholder="What needs doing? Try milk #home" autocomplete="off" aria-label="New task">
-      <input id="due-input" type="date" aria-label="Due date (optional)">
-      <button id="add-btn">Add</button>
+    <div class="layout">
+      <nav class="sidebar" aria-label="Views">
+        <button data-view="today">📅 Today <span class="count" id="count-today"></span></button>
+        <button data-view="upcoming">🔜 Upcoming <span class="count" id="count-upcoming"></span></button>
+        <button data-view="all" class="active">📋 All <span class="count" id="count-all"></span></button>
+        <div class="side-label">Tags</div>
+        <div id="side-tags"></div>
+      </nav>
+      <div class="main">
+        <div class="input-row">
+          <input id="task-input" type="text" placeholder="What needs doing? Try &quot;report p1 friday #work&quot;" autocomplete="off" aria-label="New task">
+          <input id="due-input" type="date" aria-label="Due date (optional)">
+          <button id="add-btn">Add</button>
+        </div>
+        <div class="input-row search-row">
+          <input id="search-input" type="search" placeholder="Search tasks…" autocomplete="off" aria-label="Search tasks">
+        </div>
+        <div class="filters">
+          <button data-filter="all" class="active" aria-pressed="true">All</button>
+          <button data-filter="active" aria-pressed="false">Active</button>
+          <button data-filter="completed" aria-pressed="false">Completed</button>
+        </div>
+        <div class="tag-bar" id="tag-bar">
+          <button id="tag-clear"></button>
+        </div>
+        <div class="toolbar">
+          <button id="copy-btn" title="Copy tasks as text">Copy</button>
+          <button id="paste-btn" title="Paste tasks from clipboard">Paste</button>
+          <button id="share-btn" title="Share via OS sheet">Share</button>
+          <button id="export-btn" title="Download tasks as JSON">Export</button>
+          <button id="import-btn" title="Import tasks from JSON">Import</button>
+          <button id="notify-btn" aria-pressed="false" title="Due-date reminders">Remind</button>
+          <button id="help-btn" title="Keyboard shortcuts (?)">?</button>
+        </div>
+        <input type="file" id="import-file" accept=".json,application/json" hidden>
+        <div id="help-popover" popover>
+          <strong>Shortcuts</strong>
+          <p><kbd>/</kbd> new task · <kbd>j</kbd>/<kbd>k</kbd> move between rows<br><kbd>Alt</kbd>+<kbd>↑</kbd>/<kbd>↓</kbd> reorder · <kbd>Enter</kbd> save · <kbd>Esc</kbd> cancel</p>
+        </div>
+        <ul id="task-list"></ul>
+        <p class="counter" id="counter" aria-live="polite"></p>
+      </div>
     </div>
-    <div class="filters">
-      <button data-filter="all" class="active" aria-pressed="true">All</button>
-      <button data-filter="active" aria-pressed="false">Active</button>
-      <button data-filter="completed" aria-pressed="false">Completed</button>
-    </div>
-    <div class="tag-bar" id="tag-bar">
-      <button id="tag-clear"></button>
-    </div>
-    <div class="toolbar">
-      <button id="copy-btn" title="Copy tasks as text">Copy</button>
-      <button id="paste-btn" title="Paste tasks from clipboard">Paste</button>
-      <button id="share-btn" title="Share via OS sheet">Share</button>
-      <button id="export-btn" title="Download tasks as JSON">Export</button>
-      <button id="import-btn" title="Import tasks from JSON">Import</button>
-      <button id="notify-btn" aria-pressed="false" title="Due-date reminders">Remind</button>
-      <button id="help-btn" title="Keyboard shortcuts (?)">?</button>
-    </div>
-    <input type="file" id="import-file" accept=".json,application/json" hidden>
-    <div id="help-popover" popover>
-      <strong>Shortcuts</strong>
-      <p><kbd>/</kbd> new task · <kbd>Alt</kbd>+<kbd>↑</kbd>/<kbd>↓</kbd> reorder<br><kbd>Enter</kbd> save edit · <kbd>Esc</kbd> cancel</p>
-    </div>
-    <ul id="task-list"></ul>
-    <p class="counter" id="counter" aria-live="polite"></p>
   </div>
 
   <script>
-    // --- Our data: a plain array of { text, done, due } objects ---
+    // --- Our data: a plain array of { text, done, due, prio } objects ---
     // due is a "YYYY-MM-DD" string or "" when no date was picked.
+    // prio is 0 (none) or 1/2/3 (Todoist-style P3..P1, 3 = highest).
     let tasks = [];
     let filter = 'all'; // all | active | completed
+    let view = 'all'; // all | today | upcoming (sidebar views)
+    let search = ''; // free-text query (lowercased)
     let activeTag = ''; // '' = no tag filter
     let dragIndex = -1; // index in tasks[] of dragged row
     // --- Grab the elements we need ---
     const input = document.getElementById('task-input');
     const dueInput = document.getElementById('due-input');
+    const searchInput = document.getElementById('search-input');
     const addBtn = document.getElementById('add-btn');
     const list = document.getElementById('task-list');
     const counter = document.getElementById('counter');
@@ -589,13 +708,24 @@
     function note(text) { counter.textContent = text; }
 
     // Render with View Transitions when available, plain otherwise.
-    function renderView() {
+    // afterRender runs after the DOM is rebuilt (inside the VT callback).
+    function renderView(afterRender) {
+      const update = function () {
+        render();
+        if (afterRender) afterRender();
+      };
       if (document.startViewTransition &&
           !window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
-        document.startViewTransition(function () { render(); });
+        document.startViewTransition(update);
       } else {
-        render();
+        update();
       }
+    }
+
+    function focusRow(index) {
+      const row = list.querySelector('li[data-index="' + index + '"]');
+      const btn = row && row.querySelector('.edit-btn');
+      if (btn) btn.focus();
     }
 
      // --- Theme: stored choice wins, else OS preference ---
@@ -785,26 +915,105 @@
       } catch (e) { /* notifications best-effort */ }
     }
 
-    // Help popover + global shortcuts (/ focus, ? help).
-    helpBtn.addEventListener('click', function () { helpPopover.togglePopover(); });
+    // Help popover + global shortcuts (/ focus, ? help, j/k row nav).
     document.addEventListener('keydown', function (event) {
       const typing = /^(INPUT|TEXTAREA)$/.test(document.activeElement.tagName) ||
         document.activeElement.isContentEditable;
       if (event.key === '/' && !typing) { event.preventDefault(); input.focus(); }
       else if (event.key === '?' && !typing) { helpPopover.togglePopover(); }
+      else if ((event.key === 'j' || event.key === 'k') && !typing && !event.altKey && !event.ctrlKey && !event.metaKey) {
+        const rows = Array.prototype.slice.call(list.querySelectorAll('li[data-index]'));
+        if (!rows.length) return;
+        const item = document.activeElement.closest ? document.activeElement.closest('li[data-index]') : null;
+        let at = rows.indexOf(item);
+        at = event.key === 'j' ? Math.min(rows.length - 1, at + 1) : Math.max(0, at - 1);
+        const btn = rows[at].querySelector('.edit-btn');
+        if (btn) { event.preventDefault(); btn.focus(); }
+      }
     });
     // --- Add a task (shared by the button and the Enter key) ---
+    // Natural input: "report p1 friday #work" sets prio + due inline.
     function addTask() {
-      const text = input.value.trim(); // trim() ignores "   "-only input
-      if (text === '') return;         // do nothing on empty input
+      const raw = input.value.trim(); // trim() ignores "   "-only input
+      if (raw === '') return;         // do nothing on empty input
 
-      tasks.push({ text: text, done: false, due: dueInput.value });
+      const parsed = parseNatural(raw, dueInput.value);
+      tasks.push({ text: parsed.text, done: false, due: parsed.due, prio: parsed.prio });
       input.value = '';  // clear the box for the next task
       dueInput.value = ''; // clear the date too
       input.focus();     // keep the cursor ready for fast typing
       saveTasks();
       renderView();
     }
+
+    // Tiny NLP: p1/p2/p3 priority + today/tomorrow/weekday/date words.
+    function parseNatural(raw, pickedDue) {
+      let text = raw;
+      let prio = 0;
+      const pm = text.match(/(?:^|\s)p([123])(?=\s|$)/i);
+      if (pm) { prio = Number(pm[1]); text = text.replace(pm[0], ' '); }
+      let due = pickedDue || '';
+      if (!pickedDue) {
+        const hit = parseDueWord(text.toLowerCase());
+        if (hit) { due = hit.due; text = text.slice(0, hit.index) + ' ' + text.slice(hit.index + hit.length); }
+      }
+      text = text.replace(/\s+/g, ' ').trim();
+      return { text: text, due: due, prio: prio };
+    }
+
+    function parseDueWord(lower) {
+      const today = new Date();
+      const iso = function (d) { return dayString(d); };
+      const words = {
+        today: 0, tonight: 0, tomorrow: 1, tmw: 1, tmorrow: 1,
+        monday: 1, tuesday: 2, wednesday: 3, thursday: 4,
+        friday: 5, saturday: 6, sunday: 0,
+        mon: 1, tue: 2, tues: 2, wed: 3, thu: 4, thur: 4, thurs: 4,
+        fri: 5, sat: 6, sun: 0
+      };
+      const names = Object.keys(words).sort(function (a, b) { return b.length - a.length; });
+      for (const w of names) {
+        const m = lower.match(new RegExp('(?:^|\\s)(' + w + ')(?=\\s|$)'));
+        if (!m) continue;
+        const d = new Date(today);
+        if (w === 'today' || w === 'tonight' || w === 'tomorrow' || w === 'tmw' || w === 'tmorrow') {
+          d.setDate(d.getDate() + (words[w] === 1 ? 1 : 0));
+        } else {
+          let delta = (words[w] - d.getDay() + 7) % 7;
+          if (delta === 0) delta = 7; // next week, not today
+          d.setDate(d.getDate() + delta);
+        }
+        return { due: iso(d), index: m.index + (m[0].startsWith(' ') ? 1 : 0), length: m[1].length };
+      }
+      // Explicit 2026-10-05 or 05/10 stays valid via isValidDue later.
+      const dm = lower.match(/(?:^|\s)(\d{4}-\d{2}-\d{2})(?=\s|$)/);
+      if (dm) return { due: dm[1], index: dm.index + (dm[0].startsWith(' ') ? 1 : 0), length: dm[1].length };
+      return null;
+    }
+
+    // Sidebar views + tag cloud + live search.
+    document.querySelector('.sidebar').addEventListener('click', function (event) {
+      const viewBtn = event.target.closest('[data-view]');
+      if (viewBtn) {
+        view = viewBtn.dataset.view;
+        activeTag = '';
+        document.querySelectorAll('.sidebar [data-view]').forEach(function (b) {
+          b.classList.toggle('active', b === viewBtn);
+        });
+        renderView();
+        return;
+      }
+      const tagBtn = event.target.closest('[data-sidetag]');
+      if (tagBtn) {
+        activeTag = activeTag === tagBtn.dataset.sidetag ? '' : tagBtn.dataset.sidetag;
+        renderView();
+      }
+    });
+
+    searchInput.addEventListener('input', function () {
+      search = searchInput.value.trim().toLowerCase();
+      renderView();
+    });
 
     addBtn.addEventListener('click', addTask);
 
@@ -867,11 +1076,18 @@
         renderView();
         return;
       }
+      const prioBtn = event.target.closest('.prio');
+      if (prioBtn) {
+        const pItem = prioBtn.closest('li');
+        if (!pItem || !('index' in pItem.dataset)) return;
+        const pIndex = Number(pItem.dataset.index);
+        if (!Number.isInteger(pIndex) || pIndex < 0 || pIndex >= tasks.length) return;
+        tasks[pIndex].prio = ((tasks[pIndex].prio || 0) + 1) % 4; // 0→1→2→3→0
+        saveTasks();
+        renderView();
+        return;
+      }
       const editBtn = event.target.closest('.edit-btn');
-      const item = event.target.closest('li'); // the <li> that was clicked
-      if (!item || !('index' in item.dataset)) return;
-      const index = Number(item.dataset.index); // which task in the array?
-      if (!Number.isInteger(index) || index < 0 || index >= tasks.length) return;
 
       if (event.target.classList.contains('delete-btn')) {
         tasks.splice(index, 1);          // remove 1 item at that position
@@ -930,14 +1146,8 @@
       event.preventDefault();
       const index = Number(item.dataset.index);
       if (!Number.isInteger(index) || index < 0 || index >= tasks.length) return;
-      moveTask(index, event.key === 'ArrowUp' ? index - 1 : index + 1);
-      const rows = list.querySelectorAll('li[data-index]');
-      for (const row of rows) {
-        if (Number(row.dataset.index) === Math.max(0, Math.min(tasks.length - 1, event.key === 'ArrowUp' ? index - 1 : index + 1))) {
-          const btn = row.querySelector('.edit-btn');
-          if (btn) btn.focus();
-        }
-      }
+      moveTask(index, event.key === 'ArrowUp' ? index - 1 : index + 1,
+        function (to) { focusRow(to); });
     });
 
     // Touch reorder: long-press handle (~400ms) then drag vertically.
@@ -995,7 +1205,8 @@
       } catch (e) { /* badges best-effort */ }
     }
 
-    function moveTask(from, to) {
+    function moveTask(from, to, after) {
+      if (typeof to === 'function') { after = to; to = from; }
       if (!Number.isInteger(from) || !Number.isInteger(to)) return;
       if (from < 0 || from >= tasks.length) return;
       to = Math.max(0, Math.min(tasks.length - 1, to));
@@ -1003,7 +1214,7 @@
       const moved = tasks.splice(from, 1)[0];
       tasks.splice(to, 0, moved);
       saveTasks();
-      renderView();
+      renderView(function () { if (after) after(to); });
       updateBadge();
     }
     function dayString(date) {
@@ -1070,30 +1281,66 @@
           ? 'All done! 🎉'
           : left + (left === 1 ? ' task' : ' tasks') + ' left';
 
+      const todayStr = dayString(new Date());
       const visible = tasks
         .map(function (task, index) { return { task: task, index: index }; })
         .filter(function (entry) {
           if (filter === 'active' && entry.task.done) return false;
           if (filter === 'completed' && !entry.task.done) return false;
+          if (view === 'today' && !(entry.task.due && entry.task.due <= todayStr)) return false;
+          if (view === 'upcoming' && !(entry.task.due && entry.task.due > todayStr)) return false;
           if (activeTag && taskTags(entry.task.text).indexOf(activeTag) < 0) return false;
+          if (search && entry.task.text.toLowerCase().indexOf(search) < 0) return false;
           return true;
         });
       tagBar.classList.toggle('visible', activeTag !== '');
       if (activeTag) tagClear.textContent = activeTag + ' ✕';
 
-      if (tasks.length === 0) {
-        list.innerHTML = '<li class="empty-message">No tasks yet — try “Buy milk #home” with a due date!</li>';
-        return;
-      }
+      // Sidebar counts + tag cloud.
+      const open = tasks.filter(function (t) { return !t.done; });
+      document.getElementById('count-all').textContent = open.length || '';
+      document.getElementById('count-today').textContent =
+        open.filter(function (t) { return t.due && t.due <= todayStr; }).length || '';
+      document.getElementById('count-upcoming').textContent =
+        open.filter(function (t) { return t.due && t.due > todayStr; }).length || '';
+      const tagCounts = {};
+      tasks.forEach(function (t) {
+        taskTags(t.text).forEach(function (tag) { tagCounts[tag] = (tagCounts[tag] || 0) + 1; });
+      });
+      const sideTags = document.getElementById('side-tags');
+      sideTags.innerHTML = '';
+      Object.keys(tagCounts).sort().forEach(function (tag) {
+        const b = document.createElement('button');
+        b.dataset.sidetag = tag;
+        b.textContent = tag + ' (' + tagCounts[tag] + ')';
+        if (tag === activeTag) b.classList.add('active');
+        sideTags.append(b);
+      });
 
-      if (visible.length === 0) {
-        list.innerHTML = '<li class="empty-message">Nothing here — try another filter.</li>';
-        return;
-      }
+      // Grouped headers in All view: Overdue/Today/Upcoming/No date.
+      const groups = (view === 'all' && !search && !activeTag)
+        ? [['Overdue', function (t) { return dueStatus(t) === 'overdue'; }],
+           ['Today', function (t) { return dueStatus(t) === 'today' || dueStatus(t) === 'tomorrow'; }],
+           ['Upcoming', function (t) { return dueStatus(t) === 'soon' || dueStatus(t) === 'later'; }],
+           ['No date', function (t) { return dueStatus(t) === 'none'; }]]
+        : [[view === 'today' ? 'Due now' : view === 'upcoming' ? 'Upcoming' : 'Tasks',
+            function () { return true; }]];
 
-      visible.forEach(function (entry) {
-        const task = entry.task;
-        const index = entry.index;
+      groups.forEach(function (group) {
+        const rows = visible.filter(function (entry) { return group[1](entry.task); });
+        if (!rows.length) return;
+        const head = document.createElement('li');
+        head.className = 'group-head';
+        head.textContent = group[0] + ' (' + rows.length + ')';
+        head.setAttribute('aria-hidden', 'true');
+        list.append(head);
+        rows.forEach(function (entry) {
+          list.append(buildRow(entry.task, entry.index));
+        });
+      });
+    }
+
+    function buildRow(task, index) {
         const item = document.createElement('li');
         if (task.done) item.classList.add('completed');
         item.classList.add('due-' + dueStatus(task)); // color stripe
@@ -1105,6 +1352,13 @@
         handle.textContent = '⠿';
         handle.setAttribute('aria-hidden', 'true');
 
+        const prio = document.createElement('button');
+        prio.type = 'button';
+        prio.className = 'prio';
+        prio.dataset.prio = task.prio || 0;
+        prio.title = 'Priority' + (task.prio ? ' P' + task.prio : ' (click to set)');
+        prio.setAttribute('aria-label', 'Cycle priority for ' + task.text);
+
         const checkbox = document.createElement('input');
         checkbox.type = 'checkbox';
         checkbox.checked = task.done;
@@ -1114,7 +1368,7 @@
         span.className = 'task-text';
         renderTextWithTags(span, task.text); // #tags become clickable chips
 
-        item.append(handle, checkbox, span);
+        item.append(handle, prio, checkbox, span);
 
         if (isValidDue(task.due)) {
           const badge = document.createElement('span');
@@ -1135,8 +1389,7 @@
         delBtn.setAttribute('aria-label', 'Delete ' + task.text);
 
         item.append(editBtn, delBtn);
-        list.append(item);
-      });
+        return item;
     }
     // --- Persistence: localStorage keeps data after refresh ---
     // localStorage only stores strings, so we convert with JSON.
@@ -1152,7 +1405,8 @@
     function validTask(task) {
       return task && typeof task.text === 'string' &&
         typeof task.done === 'boolean' &&
-        (typeof task.due === 'string' || typeof task.due === 'undefined');
+        (typeof task.due === 'string' || typeof task.due === 'undefined') &&
+        (typeof task.prio === 'undefined' || [0, 1, 2, 3].indexOf(task.prio) >= 0);
     }
 
     function loadTasks() {
@@ -1162,9 +1416,10 @@
         const parsed = JSON.parse(saved);
         if (!Array.isArray(parsed) || !parsed.every(validTask)) throw new Error('bad shape');
         tasks = parsed;
-        // Migrate tasks saved before due dates existed.
+        // Migrate tasks saved before due dates / priorities existed.
         tasks.forEach(function (task) {
           if (!('due' in task)) task.due = '';
+          if (!('prio' in task)) task.prio = 0;
         });
       } catch (e) {
         try { localStorage.setItem('todo-tasks-corrupt', saved); } catch (q) { /* keep going */ }
