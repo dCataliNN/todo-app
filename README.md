@@ -15,7 +15,8 @@ Your tasks are saved in the browser automatically, so they'll still be there aft
 ## What it does
 
 - **Add tasks** — type something and press Enter or click Add. A due date is optional.
-- **Complete tasks** — click a task to check it off (click again to undo).
+- **Complete tasks** — click a task or its checkbox to check it off (click again to undo).
+- **Edit tasks** — hit ✎ on any row, then Enter to save or Escape to cancel.
 - **Delete tasks** — hit the ✕ on any row.
 - **Due dates** — each dated task gets a colored stripe and a little badge so urgency is visible at a glance: red for overdue, amber for today, blue for the next few days, green for later.
 - **Counter** — a line under the list tells you how many tasks are left (or celebrates when you're done 🎉).
@@ -26,8 +27,7 @@ Your tasks are saved in the browser automatically, so they'll still be there aft
 - **v1** — add, complete, delete, browser persistence.
 - **Counter** — tasks-left line computed from the task list.
 - **Due dates + color + motion** — calendar picker, color-coded urgency, row animations.
-
-Still on the wishlist: editing a task, and filtering by All / Active / Completed.
+- **Edit + filter** — inline rename (Enter saves, Escape cancels), All / Active / Completed filter.
 
 ## Tech notes
 

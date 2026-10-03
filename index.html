@@ -171,6 +171,49 @@
       color: #64748b;
       text-align: center;
     }
+    .filters {
+      display: flex;
+      gap: 8px;
+      justify-content: center;
+      margin-bottom: 12px;
+    }
+
+    .filters button {
+      padding: 6px 14px;
+      font-size: 0.85rem;
+      border: 1px solid #cbd5e1;
+      border-radius: 999px;
+      background: #f8fafc;
+      color: #475569;
+      cursor: pointer;
+    }
+
+    .filters button.active {
+      background: #3b82f6;
+      border-color: #3b82f6;
+      color: #fff;
+    }
+
+    .edit-input {
+      flex: 1;
+      padding: 6px 8px;
+      font-size: 1rem;
+      font-family: inherit;
+      border: 1px solid #3b82f6;
+      border-radius: 6px;
+    }
+
+    .edit-btn {
+      background: none;
+      border: none;
+      cursor: pointer;
+      color: #94a3b8;
+      padding: 4px 6px;
+    }
+
+    .edit-btn:hover {
+      color: #3b82f6;
+    }
   </style>
 </head>
 <body>
@@ -182,6 +225,11 @@
       <input id="due-input" type="date" aria-label="Due date (optional)">
       <button id="add-btn">Add</button>
     </div>
+    <div class="filters">
+      <button data-filter="all" class="active">All</button>
+      <button data-filter="active">Active</button>
+      <button data-filter="completed">Completed</button>
+    </div>
 
     <ul id="task-list"></ul>
     <p class="counter" id="counter"></p>
@@ -191,7 +239,7 @@
     // --- Our data: a plain array of { text, done, due } objects ---
     // due is a "YYYY-MM-DD" string or "" when no date was picked.
     let tasks = [];
-
+    let filter = 'all'; // all | active | completed
     // --- Grab the elements we need ---
     const input = document.getElementById('task-input');
     const dueInput = document.getElementById('due-input');
@@ -222,18 +270,69 @@
       if (event.key === 'Enter') addTask();
     });
 
+    // --- Filter buttons ---
+    document.querySelector('.filters').addEventListener('click', function (event) {
+      const btn = event.target.closest('button');
+      if (!btn) return;
+      filter = btn.dataset.filter;
+      document.querySelectorAll('.filters button').forEach(function (b) {
+        b.classList.toggle('active', b === btn);
+      });
+      render();
+    });
+
+    // --- Edit: ✎ swaps text for input; Enter/blur saves, Escape cancels ---
+    function startEdit(item, index) {
+      const task = tasks[index];
+      const span = item.querySelector('.task-text');
+      const edit = document.createElement('input');
+      edit.className = 'edit-input';
+      edit.value = task.text;
+      edit.setAttribute('aria-label', 'Edit task');
+      span.replaceWith(edit);
+      edit.focus();
+      edit.setSelectionRange(edit.value.length, edit.value.length);
+      let saved = false;
+      const commit = function (save) {
+        if (saved) return;
+        saved = true;
+        if (save) {
+          const text = edit.value.trim();
+          if (text !== '') task.text = text; // empty edit = keep old text
+          saveTasks();
+        }
+        render();
+        if (!save) input.focus();
+      };
+      edit.addEventListener('keydown', function (e) {
+        if (e.key === 'Enter') commit(true);
+        else if (e.key === 'Escape') commit(false);
+        e.stopPropagation(); // don't toggle complete while editing
+      });
+      edit.addEventListener('blur', function () { commit(true); });
+      edit.addEventListener('click', function (e) { e.stopPropagation(); });
+    }
+
     // --- Toggle complete when the task text is clicked ---
     // --- Delete when the ✕ button is clicked ---
     // One listener on the <ul> handles every item (even future ones).
     list.addEventListener('click', function (event) {
+      if (event.target.classList.contains('edit-input')) return;
+      const editBtn = event.target.closest('.edit-btn');
       const item = event.target.closest('li'); // the <li> that was clicked
       if (!item) return;
       const index = Number(item.dataset.index); // which task in the array?
 
       if (event.target.classList.contains('delete-btn')) {
         tasks.splice(index, 1);          // remove 1 item at that position
-      } else {
+      } else if (editBtn) {
+        startEdit(item, index);
+        return; // no re-render; startEdit handles it
+      } else if (event.target.classList.contains('task-text') ||
+                 event.target.type === 'checkbox') {
         tasks[index].done = !tasks[index].done; // flip true/false
+      } else {
+        return; // badge / empty space: no action
       }
       saveTasks();
       render();
@@ -285,12 +384,27 @@
           ? 'All done! 🎉'
           : left + (left === 1 ? ' task' : ' tasks') + ' left';
 
+      const visible = tasks
+        .map(function (task, index) { return { task: task, index: index }; })
+        .filter(function (entry) {
+          if (filter === 'active') return !entry.task.done;
+          if (filter === 'completed') return entry.task.done;
+          return true;
+        });
+
       if (tasks.length === 0) {
         list.innerHTML = '<li class="empty-message">No tasks yet — add one above!</li>';
         return;
       }
 
-      tasks.forEach(function (task, index) {
+      if (visible.length === 0) {
+        list.innerHTML = '<li class="empty-message">Nothing here — try another filter.</li>';
+        return;
+      }
+
+      visible.forEach(function (entry) {
+        const task = entry.task;
+        const index = entry.index;
         const item = document.createElement('li');
         if (task.done) item.classList.add('completed');
         item.classList.add('due-' + dueStatus(task)); // color stripe
@@ -314,12 +428,17 @@
           item.append(badge);
         }
 
+        const editBtn = document.createElement('button');
+        editBtn.className = 'edit-btn';
+        editBtn.textContent = '✎';
+        editBtn.setAttribute('aria-label', 'Edit ' + task.text);
+
         const delBtn = document.createElement('button');
         delBtn.className = 'delete-btn';
         delBtn.textContent = '✕';
         delBtn.setAttribute('aria-label', 'Delete ' + task.text);
 
-        item.append(delBtn);
+        item.append(editBtn, delBtn);
         list.append(item);
       });
     }
