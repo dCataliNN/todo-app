@@ -14,13 +14,13 @@ Your tasks are saved in the browser automatically, so they'll still be there aft
 
 ## What it does
 
-- **Add tasks** — type something and press Enter or click Add. A due date is optional.
+- **Add tasks** — type something and press Enter or click Add. A due date is optional. `#tags` in text become clickable filters.
 - **Complete tasks** — click a task or its checkbox to check it off (click again to undo).
 - **Edit tasks** — hit ✎ on any row, then Enter to save or Escape to cancel.
 - **Delete tasks** — hit the ✕ on any row.
-- **Due dates** — each dated task gets a colored stripe and a little badge so urgency is visible at a glance: red for overdue, amber for today, blue for the next few days, green for later.
-- **Counter** — a line under the list tells you how many tasks are left (or celebrates when you're done 🎉).
-- **Works on phone and desktop** — narrow single column that fits small screens.
+- **Reorder** — drag rows by the ⠿ handle, or focus a row and press Alt+ArrowUp/Down. Order persists.
+- **Dark mode** — 🌙/☀️ toggle in the header; saved, defaults to your OS setting.
+- **Filter** — All / Active / Completed buttons plus clickable `#tag` chips with a clear bar.
 
 ## Project history
 
@@ -28,7 +28,7 @@ Your tasks are saved in the browser automatically, so they'll still be there aft
 - **Counter** — tasks-left line computed from the task list.
 - **Due dates + color + motion** — calendar picker, color-coded urgency, row animations.
 - **Edit + filter** — inline rename (Enter saves, Escape cancels), All / Active / Completed filter.
-
+- **Reorder + dark + tags** — drag/keyboard reorder, persisted dark mode, `#tag` chips with tag filter.
 ## Tech notes
 
 One file (`index.html`) with plain HTML, CSS, and JavaScript. State lives in a single `tasks` array, the screen re-renders from it on every change, and `localStorage` keeps everything between visits.

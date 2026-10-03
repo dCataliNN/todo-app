@@ -203,22 +203,140 @@
       border-radius: 6px;
     }
 
-    .edit-btn {
-      background: none;
-      border: none;
-      cursor: pointer;
-      color: #94a3b8;
-      padding: 4px 6px;
-    }
-
     .edit-btn:hover {
       color: #3b82f6;
+    }
+
+    /* --- Header + theme toggle --- */
+    .header {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 12px;
+      margin-bottom: 16px;
+    }
+
+    .header h1 {
+      margin: 0;
+    }
+
+    #theme-btn {
+      background: #f1f5f9;
+      border: 1px solid #cbd5e1;
+      border-radius: 999px;
+      font-size: 1rem;
+      cursor: pointer;
+      padding: 4px 10px;
+      line-height: 1.4;
+    }
+
+    /* --- Tag chips + active tag bar --- */
+    .tag-bar {
+      display: none;
+      justify-content: center;
+      margin-bottom: 12px;
+    }
+
+    .tag-bar.visible {
+      display: flex;
+    }
+
+    .tag-bar button {
+      padding: 4px 12px;
+      font-size: 0.85rem;
+      border: none;
+      border-radius: 999px;
+      background: #3b82f6;
+      color: #fff;
+      cursor: pointer;
+    }
+
+    .tag-chip {
+      display: inline-block;
+      font-size: 0.78rem;
+      font-weight: 600;
+      padding: 1px 8px;
+      margin: 0 2px;
+      border: none;
+      border-radius: 999px;
+      background: #e0e7ff;
+      color: #3730a3;
+      cursor: pointer;
+      font-family: inherit;
+    }
+
+    /* --- Drag handle --- */
+    .drag-handle {
+      cursor: grab;
+      color: #94a3b8;
+      padding: 4px 2px;
+      user-select: none;
+      touch-action: none;
+    }
+
+    #task-list li.drag-over {
+      outline: 2px dashed #3b82f6;
+      outline-offset: -2px;
+    }
+
+    /* --- Dark mode --- */
+    body.dark {
+      background: linear-gradient(135deg, #0f172a, #1e1b4b 55%, #052e16);
+      color: #e2e8f0;
+    }
+
+    body.dark .app {
+      background: #1e293b;
+      box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+    }
+
+    body.dark #task-input,
+    body.dark #due-input {
+      background: #0f172a;
+      border-color: #475569;
+      color: #e2e8f0;
+    }
+
+    body.dark #task-list li {
+      background: #0f172a;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
+    }
+
+    body.dark #task-list li.completed .task-text {
+      color: #64748b;
+    }
+
+    body.dark .filters button {
+      background: #0f172a;
+      border-color: #475569;
+      color: #cbd5e1;
+    }
+
+    body.dark .counter,
+    body.dark .empty-message,
+    body.dark .drag-handle,
+    body.dark .edit-btn,
+    body.dark .delete-btn {
+      color: #94a3b8;
+    }
+
+    body.dark #theme-btn {
+      background: #0f172a;
+      border-color: #475569;
+    }
+
+    body.dark .tag-chip {
+      background: #312e81;
+      color: #c7d2fe;
     }
   </style>
 </head>
 <body>
   <div class="app">
-    <h1>My To-Do List</h1>
+    <div class="header">
+      <h1>My To-Do List</h1>
+      <button id="theme-btn" aria-label="Toggle dark mode">🌙</button>
+    </div>
 
     <div class="input-row">
       <input id="task-input" type="text" placeholder="What needs doing?" autocomplete="off">
@@ -230,7 +348,9 @@
       <button data-filter="active">Active</button>
       <button data-filter="completed">Completed</button>
     </div>
-
+    <div class="tag-bar" id="tag-bar">
+      <button id="tag-clear"></button>
+    </div>
     <ul id="task-list"></ul>
     <p class="counter" id="counter"></p>
   </div>
@@ -240,16 +360,69 @@
     // due is a "YYYY-MM-DD" string or "" when no date was picked.
     let tasks = [];
     let filter = 'all'; // all | active | completed
+    let activeTag = ''; // '' = no tag filter
+    let dragIndex = -1; // index in tasks[] of dragged row
     // --- Grab the elements we need ---
     const input = document.getElementById('task-input');
     const dueInput = document.getElementById('due-input');
     const addBtn = document.getElementById('add-btn');
     const list = document.getElementById('task-list');
     const counter = document.getElementById('counter');
-
+    const themeBtn = document.getElementById('theme-btn');
+    const tagBar = document.getElementById('tag-bar');
+    const tagClear = document.getElementById('tag-clear');
     // --- Load saved tasks when the page opens ---
     loadTasks();
     render();
+
+     // --- Theme: stored choice wins, else OS preference ---
+     initTheme();
+    themeBtn.addEventListener('click', function () {
+      const dark = !document.body.classList.contains('dark');
+      applyTheme(dark, true);
+    });
+
+    function initTheme() {
+      const saved = localStorage.getItem('todo-theme');
+      const dark = saved ? saved === 'dark'
+        : window.matchMedia('(prefers-color-scheme: dark)').matches;
+      applyTheme(dark, false);
+    }
+
+    function applyTheme(dark, save) {
+      document.body.classList.toggle('dark', dark);
+      themeBtn.textContent = dark ? '☀️' : '🌙';
+      if (save) localStorage.setItem('todo-theme', dark ? 'dark' : 'light');
+    }
+
+    // --- Tags: #word in text becomes a clickable chip ---
+    function taskTags(text) {
+      const tags = text.match(/#[\p{L}\p{N}_-]+/gu);
+      return tags ? tags.map(function (t) { return t.toLowerCase(); }) : [];
+    }
+
+    function renderTextWithTags(span, text) {
+      span.textContent = '';
+      const parts = text.split(/(#[\p{L}\p{N}_-]+)/gu);
+      parts.forEach(function (part) {
+        if (/^#[\p{L}\p{N}_-]+$/u.test(part)) {
+          const chip = document.createElement('button');
+          chip.type = 'button';
+          chip.className = 'tag-chip';
+          chip.textContent = part.toLowerCase();
+          chip.dataset.tag = part.toLowerCase();
+          span.append(chip);
+        } else if (part) {
+          span.append(document.createTextNode(part));
+        }
+      });
+    }
+
+    tagClear.addEventListener('click', function () {
+      activeTag = '';
+      render();
+    });
+
 
     // --- Add a task (shared by the button and the Enter key) ---
     function addTask() {
@@ -318,6 +491,12 @@
     // One listener on the <ul> handles every item (even future ones).
     list.addEventListener('click', function (event) {
       if (event.target.classList.contains('edit-input')) return;
+      const chip = event.target.closest('.tag-chip');
+      if (chip) {
+        activeTag = activeTag === chip.dataset.tag ? '' : chip.dataset.tag;
+        render();
+        return;
+      }
       const editBtn = event.target.closest('.edit-btn');
       const item = event.target.closest('li'); // the <li> that was clicked
       if (!item) return;
@@ -337,6 +516,69 @@
       saveTasks();
       render();
     });
+
+    // --- Drag reorder: HTML5 DnD + keyboard (Alt+Arrow) ---
+    list.addEventListener('dragstart', function (event) {
+      const item = event.target.closest('li');
+      if (!item || item.classList.contains('empty-message')) return;
+      dragIndex = Number(item.dataset.index);
+      event.dataTransfer.effectAllowed = 'move';
+    });
+
+    list.addEventListener('dragover', function (event) {
+      const item = event.target.closest('li');
+      if (!item || dragIndex < 0) return;
+      event.preventDefault(); // allow drop
+      document.querySelectorAll('#task-list li.drag-over').forEach(function (el) {
+        el.classList.remove('drag-over');
+      });
+      item.classList.add('drag-over');
+    });
+
+    list.addEventListener('drop', function (event) {
+      const item = event.target.closest('li');
+      if (!item || dragIndex < 0) return;
+      event.preventDefault();
+      const to = Number(item.dataset.index);
+      moveTask(dragIndex, to);
+      dragIndex = -1;
+    });
+
+    list.addEventListener('dragend', function () {
+      dragIndex = -1;
+      document.querySelectorAll('#task-list li.drag-over').forEach(function (el) {
+        el.classList.remove('drag-over');
+      });
+    });
+
+    // Keyboard reorder: focus row (Tab to ✎/✕), Alt+ArrowUp/Down moves it.
+    list.addEventListener('keydown', function (event) {
+      if (!event.altKey || (event.key !== 'ArrowUp' && event.key !== 'ArrowDown')) return;
+      const item = event.target.closest('li');
+      if (!item) return;
+      event.preventDefault();
+      const index = Number(item.dataset.index);
+      const to = event.key === 'ArrowUp' ? index - 1 : index + 1;
+      moveTask(index, to);
+      // Keep focus on same row after re-render.
+      const rows = list.querySelectorAll('li[data-index]');
+      for (const row of rows) {
+        if (Number(row.dataset.index) === Math.max(0, Math.min(tasks.length - 1, to))) {
+          const btn = row.querySelector('.edit-btn');
+          if (btn) btn.focus();
+        }
+      }
+    });
+
+    function moveTask(from, to) {
+      if (from < 0 || from >= tasks.length) return;
+      to = Math.max(0, Math.min(tasks.length - 1, to));
+      if (from === to) return;
+      const moved = tasks.splice(from, 1)[0];
+      tasks.splice(to, 0, moved);
+      saveTasks();
+      render();
+    }
 
     // --- Due dates: compare calendar days, ignoring time of day ---
     function dayString(date) {
@@ -389,8 +631,11 @@
         .filter(function (entry) {
           if (filter === 'active') return !entry.task.done;
           if (filter === 'completed') return entry.task.done;
+          if (activeTag && taskTags(entry.task.text).indexOf(activeTag) < 0) return false;
           return true;
         });
+      tagBar.classList.toggle('visible', activeTag !== '');
+      if (activeTag) tagClear.textContent = activeTag + ' ✕';
 
       if (tasks.length === 0) {
         list.innerHTML = '<li class="empty-message">No tasks yet — add one above!</li>';
@@ -409,6 +654,12 @@
         if (task.done) item.classList.add('completed');
         item.classList.add('due-' + dueStatus(task)); // color stripe
         item.dataset.index = index; // remember position for clicks
+        item.draggable = true;
+
+        const handle = document.createElement('span');
+        handle.className = 'drag-handle';
+        handle.textContent = '⠿';
+        handle.setAttribute('aria-hidden', 'true');
 
         const checkbox = document.createElement('input');
         checkbox.type = 'checkbox';
@@ -417,9 +668,9 @@
 
         const span = document.createElement('span');
         span.className = 'task-text';
-        span.textContent = task.text; // textContent (not innerHTML) = safe from HTML injection
+        renderTextWithTags(span, task.text); // #tags become clickable chips
 
-        item.append(checkbox, span);
+        item.append(handle, checkbox, span);
 
         if (task.due) {
           const badge = document.createElement('span');
@@ -442,7 +693,6 @@
         list.append(item);
       });
     }
-
     // --- Persistence: localStorage keeps data after refresh ---
     // localStorage only stores strings, so we convert with JSON.
     function saveTasks() {
