@@ -32,3 +32,4 @@ Your tasks are saved in the browser automatically, so they'll still be there aft
 ## Tech notes
 
 One file (`index.html`) with plain HTML, CSS, and JavaScript. State lives in a single `tasks` array, the screen re-renders from it on every change, and `localStorage` keeps everything between visits.
+docs: trigger auto-deploy check
