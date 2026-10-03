@@ -2,237 +2,202 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>My To-Do List</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap">
   <style>
-    /* --- Page layout --- */
+    /* --- tweakcn theme tokens (Inter, radius 10px) --- */
+    :root {
+      --background: oklch(0.9846 0.0017 247.8389);
+      --foreground: oklch(0.2057 0.0151 248.5628);
+      --card: oklch(1.0000 0 0);
+      --card-foreground: oklch(0.2057 0.0151 248.5628);
+      --primary: oklch(0.6225 0.1882 254.0875);
+      --primary-foreground: oklch(0.9846 0.0017 247.8389);
+      --secondary: oklch(0.9545 0.0046 258.3249);
+      --secondary-foreground: oklch(0.2648 0.0165 248.4511);
+      --muted: oklch(0.9545 0.0046 258.3249);
+      --muted-foreground: oklch(0.5207 0.0140 248.0971);
+      --accent: oklch(0.9297 0.0184 250.5952);
+      --accent-foreground: oklch(0.2236 0.0164 252.4812);
+      --destructive: oklch(0.6203 0.2206 25.6388);
+      --border: oklch(0.8903 0.0064 255.4784);
+      --input: oklch(0.8903 0.0064 255.4784);
+      --ring: oklch(0.6225 0.1882 254.0875);
+      --chart-1: oklch(0.6225 0.1882 254.0875);
+      --chart-2: oklch(0.6612 0.1204 171.9631);
+      --chart-3: oklch(0.6920 0.1516 68.2309);
+      --chart-4: oklch(0.6408 0.1898 22.1208);
+      --radius: 0.625rem;
+      --shadow-xs: 0px 4px 10px 0px hsl(0, 0, 0 / 0.05);
+      --shadow-sm: 0px 4px 10px 0px hsl(0, 0, 0 / 0.10), 0px 1px 2px -1px hsl(0, 0, 0 / 0.10);
+    }
+
+    body.dark {
+      --background: oklch(0.1757 0.0122 254.1481);
+      --foreground: oklch(0.9409 0.0059 239.8225);
+      --card: oklch(0.2154 0.0141 253.1323);
+      --card-foreground: oklch(0.9409 0.0059 239.8225);
+      --primary: oklch(0.6969 0.1630 252.9094);
+      --primary-foreground: oklch(0.1757 0.0122 254.1481);
+      --secondary: oklch(0.2653 0.0142 248.3607);
+      --secondary-foreground: oklch(0.9409 0.0059 239.8225);
+      --muted: oklch(0.2653 0.0142 248.3607);
+      --muted-foreground: oklch(0.6998 0.0123 252.1295);
+      --accent: oklch(0.3050 0.0220 251.2541);
+      --accent-foreground: oklch(0.9654 0.0042 236.4970);
+      --destructive: oklch(0.6791 0.1899 25.3623);
+      --border: oklch(0.3147 0.0128 252.9992);
+      --input: oklch(0.3147 0.0128 252.9992);
+      --ring: oklch(0.6969 0.1630 252.9094);
+      --chart-1: oklch(0.6969 0.1630 252.9094);
+      --chart-2: oklch(0.7208 0.1204 171.9037);
+      --chart-3: oklch(0.7610 0.1501 71.2299);
+      --chart-4: oklch(0.7105 0.1799 22.0201);
+      --shadow-xs: 0px 10px 20px 0px hsl(0, 0, 0 / 0.25);
+      --shadow-sm: 0px 10px 20px 0px hsl(0, 0, 0 / 0.50), 0px 1px 2px -1px hsl(0, 0, 0 / 0.50);
+    }
+
+    /* --- Base --- */
     * {
-      box-sizing: border-box; /* padding/borders don't grow elements unexpectedly */
+      box-sizing: border-box;
     }
 
     body {
-      font-family: system-ui, -apple-system, sans-serif; /* uses your device's own clean font */
-      background: linear-gradient(135deg, #dbeafe, #fae8ff 55%, #fef3c7);
-      background-attachment: fixed; /* gradient stays put while scrolling */
-      color: #1e293b;
+      font-family: Inter, ui-sans-serif, system-ui, sans-serif;
+      letter-spacing: -0.01em;
+      background: var(--background);
+      color: var(--foreground);
       margin: 0;
-      padding: 24px 16px;
+      padding: 32px 16px;
       min-height: 100vh;
     }
 
     .app {
-      max-width: 480px;   /* narrow column: readable on desktop... */
-      margin: 0 auto;     /* ...centered, and full-width on phones */
-      background: #ffffff;
-      border-radius: 12px;
-      box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08);
-      padding: 24px;
+      max-width: 560px;
+      margin: 0 auto;
     }
 
-    h1 {
-      margin: 0 0 16px;
-      font-size: 1.5rem;
-      text-align: center;
-    }
-
-    /* --- Input row --- */
-    .input-row {
-      display: flex;
-      flex-wrap: wrap; /* date picker drops below on narrow phones */
-      gap: 8px;
-      margin-bottom: 16px;
-    }
-
-    #task-input {
-      flex: 1 1 160px; /* grow, shrink, min 160px before wrapping */
-      padding: 10px 12px;
-      font-size: 1rem;
-      border: 1px solid #cbd5e1;
-      border-radius: 8px;
-    }
-
-    #due-input {
-      padding: 10px 8px;
-      font-size: 0.95rem;
-      font-family: inherit;
-      color: #475569;
-      border: 1px solid #cbd5e1;
-      border-radius: 8px;
-      background: #fff;
-    }
-
-    #add-btn {
-      padding: 10px 16px;
-      font-size: 1rem;
-      background: #3b82f6;
-      color: #fff;
-      border: none;
-      border-radius: 8px;
-      cursor: pointer;
-    }
-
-    #add-btn:hover {
-      background: #2563eb;
-    }
-
-    /* --- Task list --- */
-    #task-list {
-      list-style: none; /* remove bullet points */
-      margin: 0;
-      padding: 0;
-    }
-
-    #task-list li {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      padding: 10px 12px;
-      margin-bottom: 8px;
-      border-radius: 10px;
-      border-left: 6px solid #cbd5e1; /* color stripe = due-date status */
-      background: #f8fafc;
-      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
-      animation: slide-in 0.25s ease-out; /* play once when the row appears */
-      transition: transform 0.15s ease, background 0.15s ease; /* smooth hover/toggle */
-    }
-
-    #task-list li:hover {
-      transform: translateY(-1px); /* tiny lift on hover */
-    }
-
-    /* Color stripe + badge per due-date status */
-    #task-list li.due-today { border-color: #f59e0b; background: #fffbeb; }
-    #task-list li.due-tomorrow { border-color: #f59e0b; background: #fffbeb; }
-    #task-list li.due-soon { border-color: #3b82f6; background: #eff6ff; }
-    #task-list li.due-later { border-color: #22c55e; background: #f0fdf4; }
-    #task-list li.due-overdue { border-color: #ef4444; background: #fef2f2; }
-    #task-list li.due-none { border-color: #cbd5e1; }
-
-    #task-list li.completed {
-      opacity: 0.75;
-    }
-
-    /* Row entrance animation */
-    @keyframes slide-in {
-      from { opacity: 0; transform: translateY(-6px); }
-      to { opacity: 1; transform: translateY(0); }
-    }
-
-    .due-badge {
-      font-size: 0.75rem;
-      font-weight: 600;
-      padding: 2px 8px;
-      border-radius: 999px; /* pill shape */
-      white-space: nowrap; /* date never wraps mid-text */
-    }
-
-    .due-today .due-badge { background: #fef3c7; color: #92400e; }
-    .due-tomorrow .due-badge { background: #fef3c7; color: #92400e; }
-    .due-soon .due-badge { background: #dbeafe; color: #1d4ed8; }
-    .due-later .due-badge { background: #dcfce7; color: #15803d; }
-    .due-overdue .due-badge { background: #fee2e2; color: #b91c1c; }
-
-    /* Respect users who prefer no motion */
-    @media (prefers-reduced-motion: reduce) {
-      #task-list li { animation: none; transition: none; }
-    }
-
-    .task-text {
-      flex: 1;
-      cursor: pointer; /* hints that clicking toggles complete */
-    }
-
-    /* Completed tasks get the strikethrough */
-    #task-list li.completed .task-text {
-      text-decoration: line-through;
-      color: #94a3b8;
-    }
-
-    .delete-btn {
-      background: none;
-      border: none;
-      font-size: 1.1rem;
-      cursor: pointer;
-      color: #94a3b8;
-      padding: 4px 8px;
-    }
-
-    .delete-btn:hover {
-      color: #ef4444;
-    }
-
-    .empty-message {
-      text-align: center;
-      color: #94a3b8;
-      padding: 16px 0;
-    }
-
-    .counter {
-      margin: 12px 0 0;
-      font-size: 0.9rem;
-      color: #64748b;
-      text-align: center;
-    }
-    .filters {
-      display: flex;
-      gap: 8px;
-      justify-content: center;
-      margin-bottom: 12px;
-    }
-
-    .filters button {
-      padding: 6px 14px;
-      font-size: 0.85rem;
-      border: 1px solid #cbd5e1;
-      border-radius: 999px;
-      background: #f8fafc;
-      color: #475569;
-      cursor: pointer;
-    }
-
-    .filters button.active {
-      background: #3b82f6;
-      border-color: #3b82f6;
-      color: #fff;
-    }
-
-    .edit-input {
-      flex: 1;
-      padding: 6px 8px;
-      font-size: 1rem;
-      font-family: inherit;
-      border: 1px solid #3b82f6;
-      border-radius: 6px;
-    }
-
-    .edit-btn:hover {
-      color: #3b82f6;
-    }
-
-    /* --- Header + theme toggle --- */
+    /* --- Header --- */
     .header {
       display: flex;
       align-items: center;
-      justify-content: center;
-      gap: 12px;
-      margin-bottom: 16px;
+      justify-content: space-between;
+      margin: 0 2px 14px;
     }
 
     .header h1 {
       margin: 0;
+      font-size: 1.3rem;
+      font-weight: 650;
+      letter-spacing: -0.01em;
     }
 
     #theme-btn {
-      background: #f1f5f9;
-      border: 1px solid #cbd5e1;
+      background: var(--card);
+      color: var(--foreground);
+      border: 1px solid var(--border);
       border-radius: 999px;
-      font-size: 1rem;
+      font-size: 0.95rem;
       cursor: pointer;
-      padding: 4px 10px;
-      line-height: 1.4;
+      padding: 6px 11px;
+      line-height: 1;
+      box-shadow: var(--shadow-xs);
     }
 
-    /* --- Tag chips + active tag bar --- */
+    #theme-btn:hover {
+      background: var(--accent);
+    }
+
+    /* --- Composer card --- */
+    .input-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      background: var(--card);
+      color: var(--card-foreground);
+      border: 1px solid var(--border);
+      border-radius: calc(var(--radius) + 2px);
+      padding: 8px;
+      margin-bottom: 12px;
+      box-shadow: var(--shadow-sm);
+    }
+
+    #task-input {
+      flex: 1 1 160px;
+      min-width: 0;
+      padding: 9px 12px;
+      font: inherit;
+      color: inherit;
+      background: transparent;
+      border: 1px solid transparent;
+      border-radius: calc(var(--radius) - 2px);
+    }
+
+    #task-input:focus {
+      outline: none;
+      border-color: var(--ring);
+      background: var(--background);
+    }
+
+    #due-input {
+      padding: 9px 10px;
+      font: inherit;
+      font-size: 0.9rem;
+      color: var(--muted-foreground);
+      background: var(--background);
+      border: 1px solid var(--input);
+      border-radius: calc(var(--radius) - 2px);
+    }
+
+    #add-btn {
+      padding: 9px 18px;
+      font: inherit;
+      font-size: 0.92rem;
+      font-weight: 600;
+      background: var(--primary);
+      color: var(--primary-foreground);
+      border: 1px solid transparent;
+      border-radius: calc(var(--radius) - 2px);
+      cursor: pointer;
+    }
+
+    #add-btn:hover {
+      filter: brightness(0.95);
+    }
+
+    /* --- Filter tabs (segmented) --- */
+    .filters {
+      display: flex;
+      gap: 2px;
+      width: fit-content;
+      margin: 0 auto 12px;
+      padding: 3px;
+      background: var(--muted);
+      border: 1px solid var(--border);
+      border-radius: 999px;
+    }
+
+    .filters button {
+      padding: 6px 16px;
+      font-family: inherit;
+      font-size: 0.85rem;
+      font-weight: 500;
+      border: none;
+      border-radius: 999px;
+      background: transparent;
+      color: var(--muted-foreground);
+      cursor: pointer;
+    }
+
+    .filters button.active {
+      background: var(--card);
+      color: var(--foreground);
+      box-shadow: var(--shadow-xs);
+    }
+
+    /* --- Tag filter bar --- */
     .tag-bar {
       display: none;
       justify-content: center;
@@ -248,9 +213,111 @@
       font-size: 0.85rem;
       border: none;
       border-radius: 999px;
-      background: #3b82f6;
-      color: #fff;
+      background: var(--primary);
+      color: var(--primary-foreground);
       cursor: pointer;
+    }
+
+    /* --- Task rows --- */
+    #task-list {
+      list-style: none;
+      margin: 0;
+      padding: 0;
+    }
+
+    #task-list li {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 12px;
+      margin-bottom: 8px;
+      background: var(--card);
+      color: var(--card-foreground);
+      border: 1px solid var(--border);
+      border-left: 3px solid var(--border);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow-xs);
+      animation: slide-in 0.25s ease-out;
+      transition: transform 0.15s ease, background 0.15s ease;
+    }
+
+    #task-list li:hover {
+      transform: translateY(-1px);
+    }
+
+    /* Urgency: solid stripe + matching tint (explicit tints; color-mix shifts hue at low %) */
+    #task-list li.due-overdue { border-left-color: var(--chart-4); background: #fef2f2; }
+    #task-list li.due-today { border-left-color: var(--chart-3); background: #fffbeb; }
+    #task-list li.due-tomorrow { border-left-color: var(--chart-3); background: #fffbeb; }
+    #task-list li.due-soon { border-left-color: var(--chart-1); background: #eff6ff; }
+    #task-list li.due-later { border-left-color: var(--chart-2); background: #ecfdf5; }
+    #task-list li.due-none { border-left-color: var(--border); }
+
+    #task-list li.completed {
+      opacity: 0.7;
+    }
+
+    @keyframes slide-in {
+      from { opacity: 0; transform: translateY(-6px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    .due-badge {
+      font-size: 0.75rem;
+      font-weight: 600;
+      padding: 2px 8px;
+      border-radius: 999px;
+      white-space: nowrap;
+      background: var(--secondary);
+      color: var(--secondary-foreground);
+    }
+
+    .due-overdue .due-badge { background: #fee2e2; color: #b91c1c; }
+    .due-today .due-badge { background: #fef3c7; color: #92400e; }
+    .due-tomorrow .due-badge { background: #fef3c7; color: #92400e; }
+    .due-soon .due-badge { background: #dbeafe; color: #1d4ed8; }
+    .due-later .due-badge { background: #d1fae5; color: #065f46; }
+
+    @media (prefers-reduced-motion: reduce) {
+      #task-list li { animation: none; transition: none; }
+    }
+
+    /* Round checkbox */
+    #task-list input[type="checkbox"] {
+      appearance: none;
+      flex: none;
+      width: 18px;
+      height: 18px;
+      margin: 0;
+      border: 1.5px solid var(--border);
+      border-radius: 999px;
+      background: transparent;
+      cursor: pointer;
+      display: grid;
+      place-content: center;
+    }
+
+    #task-list input[type="checkbox"]:checked {
+      background: var(--primary);
+      border-color: var(--primary);
+    }
+
+    #task-list input[type="checkbox"]:checked::after {
+      content: "✓";
+      color: var(--primary-foreground);
+      font-size: 11px;
+      line-height: 1;
+    }
+
+    .task-text {
+      flex: 1;
+      min-width: 0;
+      cursor: pointer;
+    }
+
+    #task-list li.completed .task-text {
+      text-decoration: line-through;
+      color: var(--muted-foreground);
     }
 
     .tag-chip {
@@ -261,90 +328,75 @@
       margin: 0 2px;
       border: none;
       border-radius: 999px;
-      background: #e0e7ff;
-      color: #3730a3;
+      background: var(--secondary);
+      color: var(--secondary-foreground);
       cursor: pointer;
       font-family: inherit;
     }
 
-    /* --- Drag handle --- */
+    .edit-input {
+      flex: 1;
+      min-width: 0;
+      padding: 6px 10px;
+      font: inherit;
+      color: inherit;
+      background: var(--background);
+      border: 1px solid var(--ring);
+      border-radius: calc(var(--radius) - 4px);
+    }
+
     .drag-handle {
       cursor: grab;
-      color: #94a3b8;
+      color: var(--muted-foreground);
       padding: 4px 2px;
       user-select: none;
       touch-action: none;
     }
 
     #task-list li.drag-over {
-      outline: 2px dashed #3b82f6;
+      outline: 2px dashed var(--ring);
       outline-offset: -2px;
     }
 
-    /* --- Dark mode --- */
-    body.dark {
-      background: linear-gradient(135deg, #0f172a, #1e1b4b 55%, #052e16);
-      color: #e2e8f0;
+    .edit-btn,
+    .delete-btn {
+      background: transparent;
+      border: none;
+      border-radius: calc(var(--radius) - 4px);
+      cursor: pointer;
+      color: var(--muted-foreground);
+      padding: 4px 8px;
+      font-size: 1rem;
     }
 
-    body.dark .app {
-      background: #1e293b;
-      box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+    .edit-btn:hover {
+      color: var(--primary);
+      background: var(--accent);
     }
 
-    body.dark #task-input,
-    body.dark #due-input {
-      background: #0f172a;
-      border-color: #475569;
-      color: #e2e8f0;
+    .delete-btn:hover {
+      color: var(--destructive);
+      background: var(--accent);
     }
 
-    body.dark #task-list li {
-      background: #0f172a;
-      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
+    .empty-message {
+      text-align: center;
+      color: var(--muted-foreground);
+      background: var(--card);
+      border: 1px dashed var(--border);
+      border-radius: var(--radius);
+      padding: 20px 12px;
     }
 
-    body.dark #task-list li.completed .task-text {
-      color: #64748b;
+    .counter {
+      margin: 12px 0 0;
+      font-size: 0.85rem;
+      color: var(--muted-foreground);
+      text-align: center;
     }
-
-    body.dark .filters button {
-      background: #0f172a;
-      border-color: #475569;
-      color: #cbd5e1;
-    }
-
-    body.dark .counter,
-    body.dark .empty-message,
-    body.dark .drag-handle,
-    body.dark .edit-btn,
-    body.dark .delete-btn {
-      color: #94a3b8;
-    }
-
-    body.dark #theme-btn {
-      background: #0f172a;
-      border-color: #475569;
-    }
-
-    body.dark .tag-chip {
-      background: #312e81;
-      color: #c7d2fe;
-    }
-
-    body.dark #task-list li.due-today { border-color: #f59e0b; background: #451a03; }
-    body.dark #task-list li.due-tomorrow { border-color: #f59e0b; background: #451a03; }
-    body.dark #task-list li.due-soon { border-color: #3b82f6; background: #172554; }
-    body.dark #task-list li.due-later { border-color: #22c55e; background: #052e16; }
-    body.dark #task-list li.due-overdue { border-color: #ef4444; background: #450a0a; }
-    body.dark .due-today .due-badge { background: #78350f; color: #fde68a; }
-    body.dark .due-tomorrow .due-badge { background: #78350f; color: #fde68a; }
-    body.dark .due-soon .due-badge { background: #1e3a8a; color: #bfdbfe; }
-    body.dark .due-later .due-badge { background: #14532d; color: #bbf7d0; }
-    body.dark .due-overdue .due-badge { background: #7f1d1d; color: #fecaca; }
 
     :focus-visible {
-      outline: 2px solid #3b82f6;
+      outline: 2px solid var(--ring);
       outline-offset: 2px;
     }
   </style>
