@@ -4,13 +4,16 @@
     //   tags[], recurrence, order }
     // Priority meaning (unchanged): 0=None, 1=P3 Low, 2=P2 Medium, 3=P1 High.
     let tasks = [];
+    let projects = []; // { id, name, color, icon, order, createdAt, updatedAt }
     let filter = 'all'; // all | active | completed
-    let view = 'all'; // all | today | upcoming (sidebar views)
+    let view = 'inbox'; // inbox | today | upcoming | all | project:<id>
     let search = ''; // free-text query (lowercased)
     let activeTag = ''; // '' = no tag filter
     let dragId = null; // task id of dragged row
     let openTaskId = null; // task id shown in drawer
     let drawerReturnFocus = null; // element to refocus on drawer close
+    const PROJECT_COLORS = ['#ef4444', '#f59e0b', '#22c55e', '#3b82f6', '#8b5cf6', '#ec4899', '#64748b'];
+    const PROJECT_ICONS = ['📋', '💼', '🎓', '🏠', '💻', '📚', '✈️', '❤️'];
     // --- Grab the elements we need ---
     const input = document.getElementById('task-input');
     const dueInput = document.getElementById('due-input');
@@ -25,12 +28,13 @@
     if ('serviceWorker' in navigator && /^https?:/.test(location.protocol)) {
       navigator.serviceWorker.register('./sw.js').catch(function () { /* offline optional */ });
     }
-    // --- Load saved tasks when the page opens ---
+    // --- Load saved data when the page opens ---
     loadTasks();
+    loadProjects();
+    sanitizeTaskProjects();
     render();
     requestPersist();
     updateBadge();
-
     function newId() {
       if (typeof crypto !== 'undefined' && crypto.randomUUID) return crypto.randomUUID();
       return 't' + Date.now().toString(36) + Math.random().toString(36).slice(2, 10);
@@ -65,7 +69,138 @@
       return removed;
     }
 
-    // Best-effort: ask browser to persist storage (may return false).
+    // --- Projects: { id, name, color, icon, order, createdAt, updatedAt } ---
+    function getProjectById(id) {
+      for (const p of projects) if (p.id === id) return p;
+      return null;
+    }
+
+    function getProjectIndexById(id) {
+      for (let i = 0; i < projects.length; i++) if (projects[i].id === id) return i;
+      return -1;
+    }
+
+    function saveProjects() {
+      try {
+        localStorage.setItem('todo-projects', JSON.stringify(projects));
+      } catch (e) { /* keep going */ }
+    }
+
+    function createProject(data) {
+      const stamped = nowIso();
+      const p = {
+        id: newId(),
+        name: (data.name || 'Untitled').slice(0, 60),
+        color: PROJECT_COLORS.indexOf(data.color) >= 0 ? data.color : PROJECT_COLORS[3],
+        icon: PROJECT_ICONS.indexOf(data.icon) >= 0 ? data.icon : PROJECT_ICONS[0],
+        order: projects.length,
+        createdAt: stamped,
+        updatedAt: stamped
+      };
+      projects.push(p);
+      saveProjects();
+      return p;
+    }
+
+    function updateProject(id, patch) {
+      const p = getProjectById(id);
+      if (!p) return null;
+      if (patch.name !== undefined) p.name = String(patch.name).slice(0, 60) || p.name;
+      if (patch.color !== undefined && PROJECT_COLORS.indexOf(patch.color) >= 0) p.color = patch.color;
+      if (patch.icon !== undefined && PROJECT_ICONS.indexOf(patch.icon) >= 0) p.icon = patch.icon;
+      if (patch.order !== undefined) p.order = patch.order;
+      p.updatedAt = nowIso();
+      saveProjects();
+      return p;
+    }
+
+    // Delete: tasks move to Inbox (projectId null). Never deletes tasks.
+    function deleteProject(id) {
+      const i = getProjectIndexById(id);
+      if (i < 0) return false;
+      projects.splice(i, 1);
+      tasks.forEach(function (t, n) {
+        if (t.projectId === id) { t.projectId = null; t.order = n; }
+      });
+      saveProjects();
+      saveTasks();
+      if (view === 'project:' + id) setView('inbox');
+      return true;
+    }
+
+    function moveProject(id, targetId) {
+      const from = getProjectIndexById(id);
+      const to = getProjectIndexById(targetId);
+      if (from < 0 || to < 0 || from === to) return;
+      const moved = projects.splice(from, 1)[0];
+      projects.splice(to, 0, moved);
+      projects.forEach(function (p, n) { p.order = n; });
+      saveProjects();
+    }
+
+    function getProjectTaskCount(id) {
+      return tasks.filter(function (t) { return !t.done && t.projectId === id; }).length;
+    }
+
+    function validProject(p) {
+      return p && typeof p.id === 'string' && typeof p.name === 'string';
+    }
+
+    function migrateProject(raw, index) {
+      const stamped = raw.createdAt || nowIso();
+      return {
+        id: typeof raw.id === 'string' && raw.id ? raw.id : newId(),
+        name: String(raw.name || 'Untitled').slice(0, 60),
+        color: PROJECT_COLORS.indexOf(raw.color) >= 0 ? raw.color : PROJECT_COLORS[3],
+        icon: PROJECT_ICONS.indexOf(raw.icon) >= 0 ? raw.icon : PROJECT_ICONS[0],
+        order: typeof raw.order === 'number' ? raw.order : index,
+        createdAt: stamped,
+        updatedAt: raw.updatedAt || stamped
+      };
+    }
+
+    function loadProjects() {
+      const saved = localStorage.getItem('todo-projects');
+      if (!saved) { projects = []; return; }
+      try {
+        const parsed = JSON.parse(saved);
+        if (!Array.isArray(parsed) || !parsed.every(validProject)) throw new Error('bad shape');
+        projects = parsed.map(migrateProject).sort(function (a, b) { return a.order - b.order; });
+        try { localStorage.setItem('todo-projects', JSON.stringify(projects)); } catch (q) {}
+      } catch (e) {
+        try { localStorage.setItem('todo-projects-corrupt', saved); } catch (q) {}
+        projects = []; // tasks untouched
+      }
+    }
+
+    // Orphan safety: projectId pointing nowhere becomes Inbox (null).
+    function sanitizeTaskProjects() {
+      let dirty = false;
+      tasks.forEach(function (t) {
+        if (t.projectId && !getProjectById(t.projectId)) { t.projectId = null; dirty = true; }
+      });
+      if (dirty) saveTasks();
+    }
+    function activeProjectId() {
+      return view.indexOf('project:') === 0 ? view.slice(8) : null;
+    }
+
+    function setView(v) {
+      view = v;
+      activeTag = '';
+      document.querySelectorAll('.sidebar [data-view]').forEach(function (b) {
+        b.classList.toggle('active', b.dataset.view === v);
+        if (b.dataset.view === v) b.setAttribute('aria-current', 'page');
+        else b.removeAttribute('aria-current');
+      });
+      document.querySelectorAll('#side-projects .project-row').forEach(function (b) {
+        const on = 'project:' + b.dataset.project === v;
+        b.classList.toggle('active', on);
+        if (on) b.setAttribute('aria-current', 'page');
+        else b.removeAttribute('aria-current');
+      });
+      renderView();
+    }
     function requestPersist() {
       try {
         if (navigator.storage && navigator.storage.persist) {
@@ -192,6 +327,7 @@
     });
 
     function importLines(lines) {
+      const pid = activeProjectId(); // paste targets current project view
       let added = 0;
       lines.forEach(function (line) {
         const text = line.trim().replace(/^\[[ xX]\]\s*/, '');
@@ -207,7 +343,7 @@
           id: newId(), text: body, description: '',
           done: done, createdAt: stamped, updatedAt: stamped,
           completedAt: done ? stamped : null,
-          due: due, dueTime: '', prio: 0, projectId: null,
+          due: due, dueTime: '', prio: 0, projectId: pid,
           tags: taskTags(body), recurrence: null, order: tasks.length
         });
         added++;
@@ -225,9 +361,10 @@
       navigator.share({ title: 'My To-Do List', text: text }).catch(function () { /* dismissed */ });
     });
 
-    // Export JSON download; import validates shape like loadTasks.
+    // Export versioned { version, tasks, projects }; import accepts v2 or legacy arrays.
     exportBtn.addEventListener('click', function () {
-      const blob = new Blob([JSON.stringify(tasks, null, 2)], { type: 'application/json' });
+      const payload = { version: 2, tasks: tasks, projects: projects };
+      const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
       const a = document.createElement('a');
       a.href = URL.createObjectURL(blob);
       a.download = 'todo-tasks.json';
@@ -243,9 +380,24 @@
       reader.onload = function () {
         try {
           const parsed = JSON.parse(reader.result);
-          if (!Array.isArray(parsed) || !parsed.every(validTask)) throw new Error('bad shape');
-          tasks = parsed.map(migrateTask);
-          saveTasks(); renderView(); note('Imported ' + tasks.length + ' tasks.');
+          // v2 object form.
+          if (parsed && parsed.version === 2 && Array.isArray(parsed.tasks)) {
+            if (!parsed.tasks.every(validTask)) throw new Error('bad shape');
+            tasks = parsed.tasks.map(migrateTask);
+            if (Array.isArray(parsed.projects)) {
+              if (!parsed.projects.every(validProject)) throw new Error('bad projects');
+              projects = parsed.projects.map(migrateProject);
+              saveProjects();
+            }
+            sanitizeTaskProjects();
+            saveTasks(); renderView(); note('Imported ' + tasks.length + ' tasks.');
+          } else {
+            // Legacy Phase 1 task-array backup.
+            if (!Array.isArray(parsed) || !parsed.every(validTask)) throw new Error('bad shape');
+            tasks = parsed.map(migrateTask);
+            sanitizeTaskProjects();
+            saveTasks(); renderView(); note('Imported ' + tasks.length + ' tasks.');
+          }
         } catch (e) {
           note('Import failed — not a todo-tasks JSON file.');
         }
@@ -313,17 +465,19 @@
       }
     });
     // --- Add a task (shared by the button and the Enter key) ---
-    // Natural input: "report p1 friday #work" sets prio + due inline.
+    // Natural input: "report p1 friday +College #work" sets project too.
     function addTask() {
       const raw = input.value.trim(); // trim() ignores "   "-only input
       if (raw === '') return;         // do nothing on empty input
 
       const parsed = parseNatural(raw, dueInput.value);
       const stamped = nowIso();
+      const pid = activeProjectId();
       tasks.push({
         id: newId(), text: parsed.text, description: '',
         done: false, createdAt: stamped, updatedAt: stamped, completedAt: null,
-        due: parsed.due, dueTime: '', prio: parsed.prio, projectId: null,
+        due: parsed.due, dueTime: '', prio: parsed.prio,
+        projectId: parsed.projectId !== undefined ? parsed.projectId : pid,
         tags: taskTags(parsed.text), recurrence: null, order: tasks.length
       });
       input.value = '';  // clear the box for the next task
@@ -333,19 +487,27 @@
       renderView();
     }
 
-    // Tiny NLP: p1/p2/p3 priority + today/tomorrow/weekday/date words.
+    // Tiny NLP: p1/p2/p3 priority + today/tomorrow/weekday/date words + +Project.
     function parseNatural(raw, pickedDue) {
       let text = raw;
       let prio = 0;
       const pm = text.match(/(?:^|\s)p([123])(?=\s|$)/i);
       if (pm) { prio = Number(pm[1]); text = text.replace(pm[0], ' '); }
+      // +Project (case-insensitive, exact name match only — never auto-create).
+      let projectId;
+      const jm = text.match(/(?:^|\s)\+([\p{L}\p{N}_-]+)/u);
+      if (jm) {
+        const found = projects.filter(function (p) { return p.name.toLowerCase() === jm[1].toLowerCase(); })[0];
+        if (found) { projectId = found.id; text = text.replace(jm[0], ' '); }
+        // Unknown +Name stays as normal text (no silent creation from typos).
+      }
       let due = pickedDue || '';
       if (!pickedDue) {
         const hit = parseDueWord(text.toLowerCase());
         if (hit) { due = hit.due; text = text.slice(0, hit.index) + ' ' + text.slice(hit.index + hit.length); }
       }
       text = text.replace(/\s+/g, ' ').trim();
-      return { text: text, due: due, prio: prio };
+      return { text: text, due: due, prio: prio, projectId: projectId };
     }
 
     function parseDueWord(lower) {
@@ -378,22 +540,34 @@
       return null;
     }
 
-    // Sidebar views + tag cloud + live search.
+    // Sidebar views + projects + tag cloud + live search.
     document.querySelector('.sidebar').addEventListener('click', function (event) {
+      if (event.target.closest('#project-add')) { openProjectModal(null); return; }
+      const menuBtn = event.target.closest('.pmenu');
+      if (menuBtn) {
+        event.stopPropagation();
+        openProjectModal(menuBtn.closest('.project-row').dataset.project, true);
+        return;
+      }
+      const projBtn = event.target.closest('[data-project]');
+      if (projBtn && !event.target.closest('.pmenu')) {
+        setView('project:' + projBtn.dataset.project);
+        return;
+      }
       const viewBtn = event.target.closest('[data-view]');
       if (viewBtn) {
-        view = viewBtn.dataset.view;
-        activeTag = '';
-        document.querySelectorAll('.sidebar [data-view]').forEach(function (b) {
-          b.classList.toggle('active', b === viewBtn);
-        });
-        renderView();
+        setView(viewBtn.dataset.view);
         return;
       }
       const tagBtn = event.target.closest('[data-sidetag]');
       if (tagBtn) {
         activeTag = activeTag === tagBtn.dataset.sidetag ? '' : tagBtn.dataset.sidetag;
         renderView();
+      }
+      if (event.target.closest('#tags-head')) {
+        const collapsed = document.getElementById('side-tags').hidden = !document.getElementById('side-tags').hidden;
+        try { localStorage.setItem('todo-tags-collapsed', collapsed ? '1' : ''); } catch (e) {}
+        document.querySelector('#tags-head .collapse-arrow').textContent = collapsed ? '▸' : '▾';
       }
     });
 
@@ -487,6 +661,9 @@
 
       if (event.target.classList.contains('delete-btn')) {
         deleteTask(id);
+      } else if (event.target.closest('.move-btn')) {
+        openRowMenu(event.target.closest('.move-btn'), id);
+        return;
       } else if (event.target.closest('.edit-btn')) {
         startEdit(item, id);
         return; // no re-render; startEdit handles it
@@ -708,10 +885,13 @@
           : left + (left === 1 ? ' task' : ' tasks') + ' left';
 
       const todayStr = dayString(new Date());
+      const pid = activeProjectId();
       const visible = tasks
         .filter(function (task) {
           if (filter === 'active' && task.done) return false;
           if (filter === 'completed' && !task.done) return false;
+          if (pid && task.projectId !== pid) return false;
+          if (view === 'inbox' && task.projectId) return false;
           if (view === 'today' && !(task.due && task.due <= todayStr)) return false;
           if (view === 'upcoming' && !(task.due && task.due > todayStr)) return false;
           if (activeTag && taskTags(task.text).indexOf(activeTag) < 0) return false;
@@ -721,13 +901,16 @@
       tagBar.classList.toggle('visible', activeTag !== '');
       if (activeTag) tagClear.textContent = activeTag + ' ✕';
 
-      // Sidebar counts + tag cloud.
+      // Sidebar counts + projects + tag cloud.
       const open = tasks.filter(function (t) { return !t.done; });
+      document.getElementById('count-inbox').textContent =
+        open.filter(function (t) { return !t.projectId; }).length || '';
       document.getElementById('count-all').textContent = open.length || '';
       document.getElementById('count-today').textContent =
         open.filter(function (t) { return t.due && t.due <= todayStr; }).length || '';
       document.getElementById('count-upcoming').textContent =
         open.filter(function (t) { return t.due && t.due > todayStr; }).length || '';
+      renderProjects();
       const tagCounts = {};
       tasks.forEach(function (t) {
         taskTags(t.text).forEach(function (tag) { tagCounts[tag] = (tagCounts[tag] || 0) + 1; });
@@ -741,15 +924,27 @@
         if (tag === activeTag) b.classList.add('active');
         sideTags.append(b);
       });
+      try {
+        if (localStorage.getItem('todo-tags-collapsed')) {
+          sideTags.hidden = true;
+          document.querySelector('#tags-head .collapse-arrow').textContent = '▸';
+        }
+      } catch (e) {}
 
-      // Grouped headers in All view: Overdue/Today/Upcoming/No date.
-      const groups = (view === 'all' && !search && !activeTag)
+      // Grouped headers in All/Inbox view: Overdue/Today/Upcoming/No date.
+      const grouped = (view === 'all' || view === 'inbox' || pid) && !search && !activeTag;
+      const groups = grouped
         ? [['Overdue', function (t) { return dueStatus(t) === 'overdue'; }],
            ['Today', function (t) { return dueStatus(t) === 'today' || dueStatus(t) === 'tomorrow'; }],
            ['Upcoming', function (t) { return dueStatus(t) === 'soon' || dueStatus(t) === 'later'; }],
            ['No date', function (t) { return dueStatus(t) === 'none'; }]]
-        : [[view === 'today' ? 'Due now' : view === 'upcoming' ? 'Upcoming' : 'Tasks',
-            function () { return true; }]];
+        : [[projectTitle(), function () { return true; }]];
+
+      if (!visible.length) {
+        list.innerHTML = '<li class="empty-message">' + emptyMessage() + '</li>';
+        syncDrawer();
+        return;
+      }
 
       groups.forEach(function (group) {
         const rows = visible.filter(function (task) { return group[1](task); });
@@ -765,6 +960,66 @@
       });
 
       syncDrawer();
+    }
+
+    function projectTitle() {
+      const pid = activeProjectId();
+      if (pid) {
+        const p = getProjectById(pid);
+        return p ? p.icon + ' ' + p.name : 'Tasks';
+      }
+      if (view === 'inbox') return 'Inbox';
+      if (view === 'today') return 'Due now';
+      if (view === 'upcoming') return 'Upcoming';
+      return 'Tasks';
+    }
+
+    function emptyMessage() {
+      if (view === 'inbox') return 'Your inbox is empty. Add a task above!';
+      const pid = activeProjectId();
+      if (pid) {
+        const p = getProjectById(pid);
+        return 'No tasks in ' + (p ? p.name : 'this project') + ' yet. Add one above!';
+      }
+      if (!projects.length && !tasks.length) return 'No tasks yet — try “Buy milk #home” with a due date!';
+      return 'Nothing here — try another filter.';
+    }
+
+    function renderProjects() {
+      const wrap = document.getElementById('side-projects');
+      wrap.innerHTML = '';
+      if (!projects.length) {
+        wrap.innerHTML = '<p class="project-empty">No projects yet.</p>';
+        return;
+      }
+      projects.forEach(function (p) {
+        const b = document.createElement('div');
+        b.className = 'project-row' + (view === 'project:' + p.id ? ' active' : '');
+        b.dataset.project = p.id;
+        b.setAttribute('role', 'button');
+        b.setAttribute('tabindex', '0');
+        if (view === 'project:' + p.id) b.setAttribute('aria-current', 'page');
+        b.draggable = true;
+        const dot = document.createElement('span');
+        dot.className = 'dot';
+        dot.style.setProperty('--dot', p.color);
+        dot.textContent = p.icon;
+        dot.setAttribute('aria-hidden', 'true');
+        const name = document.createElement('span');
+        name.className = 'pname';
+        name.textContent = p.name;
+        name.title = p.name;
+        const count = document.createElement('span');
+        count.className = 'count';
+        const n = getProjectTaskCount(p.id);
+        if (n) count.textContent = n;
+        const menu = document.createElement('button');
+        menu.className = 'pmenu';
+        menu.textContent = '⋯';
+        menu.setAttribute('aria-label', 'Project options for ' + p.name);
+        b.append(dot, name, count, menu);
+        wrap.append(b);
+      });
     }
 
     function buildRow(task) {
@@ -806,6 +1061,12 @@
           item.append(badge);
         }
 
+        const moveBtn = document.createElement('button');
+        moveBtn.className = 'edit-btn move-btn';
+        moveBtn.textContent = '→';
+        moveBtn.title = 'Move to project';
+        moveBtn.setAttribute('aria-label', 'Move ' + task.text + ' to project');
+
         const editBtn = document.createElement('button');
         editBtn.className = 'edit-btn';
         editBtn.textContent = '✎';
@@ -816,7 +1077,7 @@
         delBtn.textContent = '✕';
         delBtn.setAttribute('aria-label', 'Delete ' + task.text);
 
-        item.append(editBtn, delBtn);
+        item.append(moveBtn, editBtn, delBtn);
         return item;
     }
 
@@ -831,6 +1092,7 @@
     const dPrio = document.getElementById('drawer-prio');
     const dDone = document.getElementById('drawer-done');
     const dTags = document.getElementById('drawer-tags');
+    const dProject = document.getElementById('drawer-project');
     let descTimer = 0;
 
     dTitle.addEventListener('change', function () {
@@ -887,8 +1149,12 @@
       renderView();
     });
     dTags.addEventListener('keydown', function (e) { e.stopPropagation(); });
-
-    drawerClose.addEventListener('click', closeDrawer);
+    dProject.addEventListener('change', function () {
+      if (!openTaskId) return;
+      updateTask(openTaskId, { projectId: dProject.value || null });
+      renderView(); // drawer stays open on moved task; list updates underneath
+    });
+    dProject.addEventListener('keydown', function (e) { e.stopPropagation(); });
     scrim.addEventListener('click', closeDrawer);
     document.addEventListener('keydown', function (event) {
       if (event.key === 'Escape' && openTaskId) {
@@ -935,8 +1201,176 @@
       if (document.activeElement !== dPrio) dPrio.value = String(task.prio || 0);
       if (document.activeElement !== dDone) dDone.checked = !!task.done;
       if (document.activeElement !== dTags) dTags.value = (task.tags || taskTags(task.text)).join(' ');
+      if (document.activeElement !== dProject) {
+        dProject.innerHTML = '';
+        const inbox = document.createElement('option');
+        inbox.value = '';
+        inbox.textContent = '📥 Inbox';
+        dProject.append(inbox);
+        projects.forEach(function (p) {
+          const o = document.createElement('option');
+          o.value = p.id;
+          o.textContent = p.icon + ' ' + p.name;
+          dProject.append(o);
+        });
+        dProject.value = task.projectId || '';
+        if (task.projectId && !getProjectById(task.projectId)) dProject.value = '';
+      }
     }
-    // --- Persistence: localStorage keeps data after refresh ---
+
+    // --- Project modal (create / rename / color / icon / delete) ---
+    const projectScrim = document.getElementById('project-scrim');
+    const projectModal = document.getElementById('project-modal');
+    const projectModalTitle = document.getElementById('project-modal-title');
+    const projectName = document.getElementById('project-name');
+    const projectColors = document.getElementById('project-colors');
+    const projectIcons = document.getElementById('project-icons');
+    const projectSave = document.getElementById('project-save');
+    const projectCancel = document.getElementById('project-cancel');
+    const projectDelete = document.getElementById('project-delete');
+    const projectDeleteNote = document.getElementById('project-delete-note');
+    const projectDeleteActions = document.getElementById('project-delete-actions');
+    const projectDeleteInbox = document.getElementById('project-delete-inbox');
+    const projectDeleteCancel = document.getElementById('project-delete-cancel');
+    let editingProjectId = null;
+    let pickedColor = PROJECT_COLORS[3];
+    let pickedIcon = PROJECT_ICONS[0];
+
+    function paintSwatches() {
+      projectColors.innerHTML = '';
+      PROJECT_COLORS.forEach(function (c) {
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.style.background = c;
+        b.setAttribute('aria-label', 'Color ' + c);
+        b.setAttribute('aria-pressed', c === pickedColor ? 'true' : 'false');
+        b.addEventListener('click', function () { pickedColor = c; paintSwatches(); });
+        projectColors.append(b);
+      });
+      projectIcons.innerHTML = '';
+      PROJECT_ICONS.forEach(function (icon) {
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.textContent = icon;
+        b.setAttribute('aria-label', 'Icon ' + icon);
+        b.setAttribute('aria-pressed', icon === pickedIcon ? 'true' : 'false');
+        b.addEventListener('click', function () { pickedIcon = icon; paintSwatches(); });
+        projectIcons.append(b);
+      });
+    }
+
+    function openProjectModal(id, manage) {
+      editingProjectId = id;
+      const p = id && getProjectById(id);
+      projectModalTitle.textContent = p ? 'Edit project' : 'New project';
+      projectName.value = p ? p.name : '';
+      pickedColor = p ? p.color : PROJECT_COLORS[3];
+      pickedIcon = p ? p.icon : PROJECT_ICONS[0];
+      paintSwatches();
+      const hasTasks = p && tasks.some(function (t) { return t.projectId === p.id; });
+      projectDelete.hidden = !p;
+      projectDeleteNote.hidden = true;
+      projectDeleteActions.hidden = true;
+      projectModal.hidden = false;
+      projectScrim.hidden = false;
+      projectName.focus();
+      if (manage) projectName.select();
+    }
+
+    function closeProjectModal() {
+      projectModal.hidden = true;
+      projectScrim.hidden = true;
+      editingProjectId = null;
+    }
+
+    projectSave.addEventListener('click', function () {
+      const name = projectName.value.trim();
+      if (!name) { projectName.focus(); return; }
+      if (editingProjectId) {
+        updateProject(editingProjectId, { name: name, color: pickedColor, icon: pickedIcon });
+      } else {
+        const p = createProject({ name: name, color: pickedColor, icon: pickedIcon });
+        setView('project:' + p.id);
+      }
+      closeProjectModal();
+      renderView();
+    });
+    projectName.addEventListener('keydown', function (e) {
+      e.stopPropagation();
+      if (e.key === 'Enter') projectSave.click();
+      else if (e.key === 'Escape') closeProjectModal();
+    });
+    projectCancel.addEventListener('click', closeProjectModal);
+    projectScrim.addEventListener('click', closeProjectModal);
+    projectDelete.addEventListener('click', function () {
+      const p = editingProjectId && getProjectById(editingProjectId);
+      if (!p) return;
+      const n = getProjectTaskCount(p.id);
+      projectDeleteNote.hidden = false;
+      projectDeleteNote.textContent = n
+        ? n + ' open tasks will move to Inbox. Delete “' + p.name + '”?'
+        : 'Delete “' + p.name + '”? Tasks already in Inbox are unaffected.';
+      projectDeleteActions.hidden = false;
+    });
+    projectDeleteCancel.addEventListener('click', function () {
+      projectDeleteNote.hidden = true;
+      projectDeleteActions.hidden = true;
+    });
+    projectDeleteInbox.addEventListener('click', function () {
+      if (editingProjectId) deleteProject(editingProjectId);
+      closeProjectModal();
+      renderView();
+    });
+    // Sidebar project DnD reorder (drag handle = whole row; tasks unaffected).
+    document.getElementById('side-projects').addEventListener('dragstart', function (event) {
+      const row = event.target.closest('.project-row');
+      if (!row) return;
+      event.dataTransfer.setData('text/project-id', row.dataset.project);
+      event.dataTransfer.effectAllowed = 'move';
+    });
+    document.getElementById('side-projects').addEventListener('dragover', function (event) {
+      const row = event.target.closest('.project-row');
+      if (!row) return;
+      event.preventDefault();
+    });
+    document.getElementById('side-projects').addEventListener('drop', function (event) {
+      const row = event.target.closest('.project-row');
+      const id = event.dataTransfer.getData('text/project-id');
+      if (!row || !id) return;
+      event.preventDefault();
+      moveProject(id, row.dataset.project);
+      renderView();
+    });
+
+    // Row quick-move menu (⋯ on hover): Inbox + projects.
+    let rowMenuEl = null;
+    function openRowMenu(anchor, id) {
+      closeRowMenu();
+      rowMenuEl = document.createElement('div');
+      rowMenuEl.className = 'rowmenu';
+      const add = function (label, pid) {
+        const b = document.createElement('button');
+        b.textContent = label;
+        b.addEventListener('click', function () {
+          updateTask(id, { projectId: pid });
+          closeRowMenu();
+          renderView();
+        });
+        rowMenuEl.append(b);
+      };
+      add('📥 Inbox', null);
+      projects.forEach(function (p) { add(p.icon + ' ' + p.name, p.id); });
+      document.body.append(rowMenuEl);
+      const r = anchor.getBoundingClientRect();
+      rowMenuEl.style.left = Math.min(window.innerWidth - 210, r.left) + 'px';
+      rowMenuEl.style.top = (r.bottom + 6) + 'px';
+      setTimeout(function () {
+        document.addEventListener('click', closeRowMenu, { once: true });
+      }, 0);
+    }
+    function closeRowMenu() {
+      if (rowMenuEl) { rowMenuEl.remove(); rowMenuEl = null; }
+    }
     // localStorage only stores strings, so we convert with JSON.
     function saveTasks() {
       try {

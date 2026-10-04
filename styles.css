@@ -146,9 +146,241 @@
       color: var(--muted-foreground);
     }
 
-    .main {
+    .side-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin: 8px 4px 4px 10px;
+    }
+
+    .side-head .side-label {
+      margin: 0;
+    }
+
+    .side-head.collapsible {
+      cursor: pointer;
+    }
+
+    #project-add {
+      width: auto;
+      padding: 2px 10px;
+      font-size: 1rem;
+      line-height: 1.2;
+    }
+
+    #side-projects {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+
+    .project-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      width: 100%;
+      padding: 8px 10px;
+      font-family: inherit;
+      font-size: 0.88rem;
+      background: transparent;
+      color: var(--muted-foreground);
+      border: none;
+      border-radius: calc(var(--radius) - 4px);
+      cursor: pointer;
+      text-align: left;
+    }
+
+    .project-row:hover {
+      background: var(--accent);
+      color: var(--foreground);
+    }
+
+    .project-row.active {
+      background: var(--accent);
+      color: var(--foreground);
+      font-weight: 600;
+    }
+
+    .project-row .dot {
+      flex: none;
+      width: 22px;
+      height: 22px;
+      border-radius: 999px;
+      background: color-mix(in srgb, var(--dot, var(--muted-foreground)) 18%, transparent);
+      color: var(--dot, var(--muted-foreground));
+      font-size: 0.85rem;
+      display: grid;
+      place-content: center;
+    }
+
+    .project-row .pname {
       flex: 1;
       min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .project-row .count {
+      margin-left: auto;
+    }
+
+    .project-row .pmenu {
+      flex: none;
+      padding: 0 6px;
+      font-size: 1rem;
+      line-height: 1;
+      background: transparent;
+      border: none;
+      border-radius: 4px;
+      color: inherit;
+      cursor: pointer;
+      opacity: 0;
+    }
+
+    .project-row:hover .pmenu,
+    .project-row:focus-within .pmenu {
+      opacity: 1;
+    }
+
+    .project-row.drag-over {
+      outline: 2px dashed var(--ring);
+      outline-offset: -2px;
+    }
+
+    .project-empty {
+      margin: 0 10px 4px;
+      font-size: 0.8rem;
+      color: var(--muted-foreground);
+    }
+
+    /* Project modal */
+    .modal-scrim {
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.35);
+      z-index: 60;
+    }
+
+    .modal-scrim[hidden],
+    .modal[hidden] {
+      display: none;
+    }
+
+    .modal {
+      position: fixed;
+      z-index: 70;
+      left: 50%;
+      top: 50%;
+      transform: translate(-50%, -50%);
+      width: min(380px, calc(100vw - 32px));
+      background: var(--card);
+      color: var(--card-foreground);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow-sm);
+      padding: 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .modal h2 {
+      margin: 0;
+      font-size: 1.05rem;
+    }
+
+    .modal-actions {
+      display: flex;
+      gap: 8px;
+      justify-content: flex-end;
+    }
+
+    .modal-actions button {
+      padding: 8px 14px;
+      font: inherit;
+      font-size: 0.88rem;
+      border: 1px solid var(--border);
+      border-radius: calc(var(--radius) - 2px);
+      background: var(--card);
+      color: var(--foreground);
+      cursor: pointer;
+    }
+
+    .modal-actions button.primary {
+      background: var(--primary);
+      color: var(--primary-foreground);
+      border-color: transparent;
+    }
+
+    .modal-actions #project-delete {
+      margin-right: auto;
+      color: var(--destructive);
+    }
+
+    .modal-note {
+      margin: 0;
+      font-size: 0.85rem;
+      color: var(--muted-foreground);
+    }
+
+    .swatches {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+    }
+
+    .swatches button {
+      width: 28px;
+      height: 28px;
+      border-radius: 999px;
+      border: 2px solid transparent;
+      cursor: pointer;
+      font-size: 1rem;
+      line-height: 1;
+      background: var(--muted);
+      color: var(--foreground);
+    }
+
+    .swatches button[aria-pressed="true"] {
+      border-color: var(--ring);
+    }
+
+    /* Row quick-move menu */
+    .rowmenu {
+      position: fixed;
+      z-index: 80;
+      min-width: 190px;
+      background: var(--card);
+      color: var(--card-foreground);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow-sm);
+      padding: 6px;
+    }
+
+    .rowmenu[hidden] {
+      display: none;
+    }
+
+    .rowmenu button {
+      display: flex;
+      width: 100%;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 10px;
+      font: inherit;
+      font-size: 0.88rem;
+      background: transparent;
+      border: none;
+      border-radius: calc(var(--radius) - 4px);
+      cursor: pointer;
+      color: inherit;
+      text-align: left;
+    }
+
+    .rowmenu button:hover {
+      background: var(--accent);
     }
 
     /* Priority flags (Todoist P1-P3): colored dot on each row */

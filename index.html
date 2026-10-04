@@ -21,10 +21,19 @@
 
     <div class="layout">
       <nav class="sidebar" aria-label="Views">
+        <button data-view="inbox">📥 Inbox <span class="count" id="count-inbox"></span></button>
         <button data-view="today">📅 Today <span class="count" id="count-today"></span></button>
         <button data-view="upcoming">🔜 Upcoming <span class="count" id="count-upcoming"></span></button>
-        <button data-view="all" class="active">📋 All <span class="count" id="count-all"></span></button>
-        <div class="side-label">Tags</div>
+        <button data-view="all">📋 All Tasks <span class="count" id="count-all"></span></button>
+        <div class="side-head">
+          <span class="side-label">Projects</span>
+          <button id="project-add" aria-label="New project" title="New project">+</button>
+        </div>
+        <div id="side-projects"></div>
+        <div class="side-head collapsible" id="tags-head">
+          <span class="side-label">Tags</span>
+          <span class="collapse-arrow" aria-hidden="true">▾</span>
+        </div>
         <div id="side-tags"></div>
       </nav>
       <div class="main">
@@ -110,7 +119,7 @@
     <div class="drawer-grid">
       <label class="drawer-field">
         <span>Project</span>
-        <input id="drawer-project" type="text" disabled placeholder="Phase 2">
+        <select id="drawer-project"></select>
       </label>
       <label class="drawer-field">
         <span>Recurrence</span>
@@ -118,6 +127,35 @@
       </label>
     </div>
   </aside>
+
+  <div class="modal-scrim" id="project-scrim" hidden></div>
+  <div class="modal" id="project-modal" role="dialog" aria-modal="true" aria-labelledby="project-modal-title" hidden>
+    <h2 id="project-modal-title">New project</h2>
+    <label class="drawer-field">
+      <span>Name</span>
+      <input id="project-name" type="text" autocomplete="off" maxlength="60">
+    </label>
+    <div class="drawer-grid">
+      <div class="drawer-field">
+        <span>Color</span>
+        <div class="swatches" id="project-colors"></div>
+      </div>
+      <div class="drawer-field">
+        <span>Icon</span>
+        <div class="swatches" id="project-icons"></div>
+      </div>
+    </div>
+    <div class="modal-actions">
+      <button id="project-cancel">Cancel</button>
+      <button id="project-delete" hidden>Delete</button>
+      <button id="project-save" class="primary">Save</button>
+    </div>
+    <p class="modal-note" id="project-delete-note" hidden></p>
+    <div class="modal-actions" id="project-delete-actions" hidden>
+      <button id="project-delete-inbox">Move tasks to Inbox</button>
+      <button id="project-delete-cancel">Keep project</button>
+    </div>
+  </div>
 
   <script src="./app.js"></script>
 </body>
