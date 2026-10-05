@@ -1,5 +1,5 @@
 // ponytail: network-first for HTML, cache-first for assets; bump CACHE on changes.
-const CACHE = 'todo-v4';
+const CACHE = 'todo-v5';
 const ASSETS = ['./', './index.html', './styles.css', './app.js', './manifest.json', './icon.svg'];
 
 self.addEventListener('install', function (event) {

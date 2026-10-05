@@ -1,8 +1,13 @@
     // --- Task model ---
     // { id, text, description, done, createdAt, updatedAt, completedAt,
-    //   due (YYYY-MM-DD|""), dueTime (HH:mm|""), prio (0-3), projectId,
+    //   due (YYYY-MM-DD|""), dueTime (HH:mm|""), prio (0-4), projectId,
     //   tags[], recurrence, order }
-    // Priority meaning (unchanged): 0=None, 1=P3 Low, 2=P2 Medium, 3=P1 High.
+    // Priority: 0=None, 1=P3 Low, 2=P2 Medium, 3=P1 High, 4=P4 Lowest.
+    // Urgency rank: P1(3) > P2(2) > P3(1) > P4(4) > None(0). Never numeric-sort prio.
+    const PRIO_LABELS = { 0: 'None', 1: 'P3 · Low', 2: 'P2 · Medium', 3: 'P1 · High', 4: 'P4 · Lowest' };
+    const PRIO_VALUES = [0, 1, 2, 3, 4];
+    function prioLabel(v) { return PRIO_LABELS[v] || PRIO_LABELS[0]; }
+    function prioRank(v) { return v === 3 ? 0 : v === 2 ? 1 : v === 1 ? 2 : v === 4 ? 3 : 4; }
     let tasks = [];
     let projects = []; // { id, name, color, icon, order, createdAt, updatedAt }
     let filter = 'all'; // all | active | completed
@@ -487,11 +492,11 @@
       renderView();
     }
 
-    // Tiny NLP: p1/p2/p3 priority + today/tomorrow/weekday/date words + +Project.
+    // Tiny NLP: p1/p2/p3/p4 priority + today/tomorrow/weekday/date words + +Project.
     function parseNatural(raw, pickedDue) {
       let text = raw;
       let prio = 0;
-      const pm = text.match(/(?:^|\s)p([123])(?=\s|$)/i);
+      const pm = text.match(/(?:^|\s)p([1234])(?=\s|$)/i);
       if (pm) { prio = Number(pm[1]); text = text.replace(pm[0], ' '); }
       // +Project (case-insensitive, exact name match only — never auto-create).
       let projectId;
@@ -649,7 +654,7 @@
         const pid = rowId(prioBtn);
         const pt = pid && getTaskById(pid);
         if (!pt) return;
-        updateTask(pid, { prio: ((pt.prio || 0) + 1) % 4 }); // 0→1→2→3→0
+        updateTask(pid, { prio: PRIO_VALUES[(PRIO_VALUES.indexOf(pt.prio || 0) + 1) % PRIO_VALUES.length] }); // 0→1→2→3→4→0
         renderView();
         return;
       }
@@ -1052,8 +1057,8 @@
         prio.type = 'button';
         prio.className = 'prio';
         prio.dataset.prio = task.prio || 0;
-        prio.title = 'Priority' + (task.prio ? ' P' + task.prio : ' (click to set)');
-        prio.setAttribute('aria-label', 'Cycle priority for ' + task.text);
+        prio.title = prioLabel(task.prio || 0) + ' (click to change)';
+        prio.setAttribute('aria-label', prioLabel(task.prio || 0) + ' for ' + task.text + '. Activate to change.');
 
         const checkbox = document.createElement('input');
         checkbox.type = 'checkbox';
@@ -1189,7 +1194,8 @@
     dTime.addEventListener('keydown', function (e) { e.stopPropagation(); });
     dPrio.addEventListener('change', function () {
       if (!openTaskId) return;
-      updateTask(openTaskId, { prio: Number(dPrio.value) || 0 });
+      const v = Number(dPrio.value);
+      updateTask(openTaskId, { prio: PRIO_VALUES.indexOf(v) >= 0 ? v : 0 });
       renderView();
     });
     dDone.addEventListener('change', function () {
@@ -1447,7 +1453,7 @@
     function validTask(task) {
       if (!task || typeof task.text !== 'string' || typeof task.done !== 'boolean') return false;
       if ('due' in task && typeof task.due !== 'string') return false;
-      if ('prio' in task && [0, 1, 2, 3].indexOf(task.prio) < 0) return false;
+      if ('prio' in task && PRIO_VALUES.indexOf(task.prio) < 0) return false;
       if ('id' in task && typeof task.id !== 'string') return false;
       if ('dueTime' in task && typeof task.dueTime !== 'string') return false;
       if ('description' in task && typeof task.description !== 'string') return false;
@@ -1467,7 +1473,7 @@
         completedAt: raw.completedAt || (raw.done ? stamped : null),
         due: typeof raw.due === 'string' ? raw.due : '',
         dueTime: typeof raw.dueTime === 'string' ? raw.dueTime : '',
-        prio: [0, 1, 2, 3].indexOf(raw.prio) >= 0 ? raw.prio : 0,
+        prio: PRIO_VALUES.indexOf(raw.prio) >= 0 ? raw.prio : 0,
         projectId: typeof raw.projectId === 'string' ? raw.projectId : null,
         tags: Array.isArray(raw.tags) ? raw.tags : taskTags(text),
         recurrence: raw.recurrence || null,

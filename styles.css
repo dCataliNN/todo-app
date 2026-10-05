@@ -398,9 +398,11 @@
     .prio[data-prio="3"] { border-color: #ef4444; }
     .prio[data-prio="2"] { border-color: #f59e0b; }
     .prio[data-prio="1"] { border-color: #3b82f6; }
+    .prio[data-prio="4"] { border-color: var(--muted-foreground); }
     .prio[data-prio="3"]::after { content: ""; display: block; width: 8px; height: 8px; margin: 3.5px; border-radius: 999px; background: #ef4444; }
     .prio[data-prio="2"]::after { content: ""; display: block; width: 8px; height: 8px; margin: 3.5px; border-radius: 999px; background: #f59e0b; }
     .prio[data-prio="1"]::after { content: ""; display: block; width: 8px; height: 8px; margin: 3.5px; border-radius: 999px; background: #3b82f6; }
+    .prio[data-prio="4"]::after { content: ""; display: block; width: 8px; height: 8px; margin: 3.5px; border-radius: 999px; background: var(--muted-foreground); }
 
     /* Group headers (Today / Upcoming / Later) */
     .group-head {
