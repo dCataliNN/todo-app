@@ -673,10 +673,9 @@
       } else if (event.target.closest('.due-badge')) {
         openDrawer(id, event.target);
         return; // drawer handles its own render
-      } else if (event.target.closest('.task-text')) {
-        // Chips filter by tag (handled above); plain text toggles complete.
-        const done = !task.done;
-        updateTask(id, { done: done, completedAt: done ? nowIso() : null });
+      } else if (event.target.closest('.task-text') && !event.target.closest('.tag-chip')) {
+        openDrawer(id, item);
+        return; // drawer handles its own render
       } else {
         openDrawer(id, event.target.closest('button') || item);
         return; // drawer handles its own render
@@ -729,6 +728,20 @@
         const to = Math.max(0, Math.min(tasks.length - 1, from + (event.key === 'ArrowUp' ? -1 : 1)));
         if (to === from) return;
         moveTask(id, to, function () { focusRow(tasks[to].id); });
+        return;
+      }
+      if (event.key === ' ' && !event.altKey && !event.ctrlKey && !event.metaKey) {
+        const tag = event.target.tagName;
+        if (/^(INPUT|TEXTAREA|SELECT|BUTTON)$/.test(tag) || event.target.isContentEditable) return;
+        const id = rowId(event.target);
+        if (!id) return;
+        const task = getTaskById(id);
+        if (!task) return;
+        event.preventDefault();
+        const done = !task.done;
+        updateTask(id, { done: done, completedAt: done ? nowIso() : null });
+        saveTasks();
+        renderView(function () { focusRow(id); });
         return;
       }
       if (event.key === 'Enter' && !event.altKey && !event.ctrlKey && !event.metaKey) {
@@ -1047,19 +1060,21 @@
         checkbox.checked = task.done;
         checkbox.setAttribute('aria-label', 'Mark ' + task.text + (task.done ? ' active' : ' done'));
 
+        const body = document.createElement('div');
+        body.className = 'task-body';
+
         const span = document.createElement('span');
         span.className = 'task-text';
         renderTextWithTags(span, task.text); // #tags become clickable chips
+        body.append(span);
 
-        item.append(handle, prio, checkbox, span);
+        const meta = buildMeta(task);
+        if (meta) body.append(meta);
 
-        if (isValidDue(task.due)) {
-          const badge = document.createElement('span');
-          badge.className = 'due-badge';
-          badge.textContent = dueLabel(task) + (task.dueTime ? ' ' + task.dueTime : '');
-          badge.title = task.due + (task.dueTime ? ' ' + task.dueTime : ''); // full date on hover
-          item.append(badge);
-        }
+        item.append(handle, prio, checkbox, body);
+
+        const actions = document.createElement('div');
+        actions.className = 'row-actions';
 
         const moveBtn = document.createElement('button');
         moveBtn.className = 'edit-btn move-btn';
@@ -1077,8 +1092,56 @@
         delBtn.textContent = '✕';
         delBtn.setAttribute('aria-label', 'Delete ' + task.text);
 
-        item.append(moveBtn, editBtn, delBtn);
+        actions.append(moveBtn, editBtn, delBtn);
+        item.append(actions);
         return item;
+    }
+
+    // Quiet metadata line: only chips that exist (date/time/project/tags/recurrence/progress).
+    function buildMeta(task) {
+        const parts = [];
+        if (isValidDue(task.due)) {
+          parts.push({ kind: 'badge', text: dueLabel(task) + (task.dueTime ? ' ' + task.dueTime : ''),
+            title: task.due + (task.dueTime ? ' ' + task.dueTime : '') });
+        }
+        if (task.projectId) {
+          const p = getProjectById(task.projectId);
+          if (p) parts.push({ kind: 'project', text: p.icon + ' ' + p.name, color: p.color });
+        }
+        (task.tags || taskTags(task.text)).forEach(function (tag) {
+          parts.push({ kind: 'tag', text: tag, tag: tag });
+        });
+        if (task.recurrence) parts.push({ kind: 'recur', text: '↻ ' + task.recurrence });
+        const subs = subtaskProgress(task);
+        if (subs) parts.push({ kind: 'subs', text: subs });
+        if (!parts.length) return null;
+        const meta = document.createElement('div');
+        meta.className = 'task-meta';
+        parts.forEach(function (part) {
+          let el;
+          if (part.kind === 'tag') {
+            el = document.createElement('button');
+            el.type = 'button';
+            el.className = 'tag-chip meta-chip';
+            el.textContent = part.text;
+            el.dataset.tag = part.tag;
+          } else {
+            el = document.createElement('span');
+            el.className = 'due-badge meta-chip meta-' + part.kind;
+            el.textContent = part.text;
+            if (part.title) el.title = part.title;
+            if (part.color) el.style.setProperty('--meta-dot', part.color);
+          }
+          meta.append(el);
+        });
+        return meta;
+    }
+
+    // Placeholder until subtasks land: reads task.subtasks if present.
+    function subtaskProgress(task) {
+      if (!Array.isArray(task.subtasks) || !task.subtasks.length) return '';
+      const done = task.subtasks.filter(function (s) { return s.done; }).length;
+      return done + '/' + task.subtasks.length;
     }
 
     // --- Task details drawer (autosave, debounced for text) ---
@@ -1155,10 +1218,10 @@
       renderView(); // drawer stays open on moved task; list updates underneath
     });
     dProject.addEventListener('keydown', function (e) { e.stopPropagation(); });
+    drawerClose.addEventListener('click', closeDrawer);
     scrim.addEventListener('click', closeDrawer);
     document.addEventListener('keydown', function (event) {
       if (event.key === 'Escape' && openTaskId) {
-        // Don't hijack Escape from inline edit or help popover.
         if (event.target.classList && event.target.classList.contains('edit-input')) return;
         closeDrawer();
       }

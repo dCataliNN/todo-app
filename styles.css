@@ -808,6 +808,78 @@
       background: var(--accent);
     }
 
+    /* --- Phase 3: scannable rows --- */
+    #task-list li.task-row {
+      cursor: default;
+    }
+
+    .task-body {
+      flex: 1;
+      min-width: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .task-text {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .task-meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 4px;
+      min-width: 0;
+    }
+
+    .task-meta .meta-chip {
+      font-size: 0.72rem;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      max-width: 100%;
+    }
+
+    .task-meta .meta-project::before {
+      content: "";
+      display: inline-block;
+      width: 7px;
+      height: 7px;
+      border-radius: 999px;
+      background: var(--meta-dot, var(--muted-foreground));
+      margin-right: 5px;
+      vertical-align: 1px;
+    }
+
+    /* Actions: hover/focus visible on desktop, always visible on touch */
+    .row-actions {
+      flex: none;
+      display: flex;
+      gap: 2px;
+      margin-left: auto;
+    }
+
+    @media (hover: hover) and (pointer: fine) {
+      .row-actions {
+        opacity: 0;
+      }
+      #task-list li.task-row:hover .row-actions,
+      #task-list li.task-row:focus-within .row-actions {
+        opacity: 1;
+      }
+    }
+
+    /* Group headers stay noninteractive */
+    #task-list li.group-head {
+      cursor: default;
+      background: transparent;
+      border: none;
+      box-shadow: none;
+      padding: 14px 2px 6px;
+    }
+
     .empty-message {
       text-align: center;
       color: var(--muted-foreground);
