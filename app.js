@@ -6,10 +6,12 @@
     // Urgency rank: P1(3) > P2(2) > P3(1) > P4(4) > None(0). Never numeric-sort prio.
     const PRIO_LABELS = { 0: 'None', 1: 'P3 · Low', 2: 'P2 · Medium', 3: 'P1 · High', 4: 'P4 · Lowest' };
     const PRIO_VALUES = [0, 1, 2, 3, 4];
+    const RECUR_FREQS = ['daily', 'weekdays', 'weekly', 'monthly', 'yearly'];
     function prioLabel(v) { return PRIO_LABELS[v] || PRIO_LABELS[0]; }
     function prioRank(v) { return v === 3 ? 0 : v === 2 ? 1 : v === 1 ? 2 : v === 4 ? 3 : 4; }
     let tasks = [];
     let projects = []; // { id, name, color, icon, order, createdAt, updatedAt }
+    let saveFailed = false; // storage write failed: counter shows unsaved state
     let filter = 'all'; // all | active | completed
     let view = 'inbox'; // inbox | today | upcoming | all | project:<id>
     let search = ''; // free-text query (lowercased)
@@ -63,6 +65,76 @@
       Object.assign(t, patch, { updatedAt: nowIso() });
       saveTasks();
       return t;
+    }
+
+    // Completion transitions route here so recurrence fires exactly once.
+    // Returns { task, generatedId } — generatedId set when a successor was created.
+    function setTaskDone(id, done) {
+      const t = getTaskById(id);
+      if (!t || t.done === done) return { task: t, generatedId: null };
+      if (!done) {
+        removeUntouchedSuccessor(t);
+        updateTask(id, { done: false, completedAt: null });
+        saveTasks();
+        return { task: getTaskById(id), generatedId: null };
+      }
+      updateTask(id, { done: true, completedAt: nowIso() });
+      const generatedId = maybeGenerateSuccessor(getTaskById(id));
+      saveTasks();
+      return { task: getTaskById(id), generatedId: generatedId };
+    }
+
+    // Create the next occurrence for a freshly completed recurring task.
+    // Idempotent: skips when an ungenerated successor already exists.
+    function maybeGenerateSuccessor(t) {
+      if (!t || !t.done || !t.recurrence || !validRecurrence(t.recurrence)) return null;
+      const rule = t.recurrence;
+      if (tasks.some(function (o) { return o.generatedFrom === t.id; })) return null;
+      const base = rule.afterCompletion ? dayString(new Date()) : (t.due || '');
+      const nextDue = nextRecurDateCatchUp(rule, base || dayString(new Date()));
+      if (!nextDue) return null;
+      if (rule.count && countOccurrences(t) + 1 > rule.count) return null;
+      const stamped = nowIso();
+      const succ = {
+        id: newId(), text: t.text, description: t.description || '',
+        done: false, createdAt: stamped, updatedAt: stamped, completedAt: null,
+        due: nextDue, dueTime: t.dueTime || '', prio: t.prio || 0,
+        projectId: t.projectId || null,
+        tags: Array.isArray(t.tags) ? t.tags.slice() : taskTags(t.text),
+        recurrence: normalizeRecurrence(rule),
+        order: tasks.length,
+        generatedFrom: t.id,
+        occurrence: (t.occurrence || 0) + 1
+      };
+      succ.recurrence.anchorDue = rule.anchorDue || t.due || nextDue;
+      tasks.push(succ);
+      return succ.id;
+    }
+
+    function countOccurrences(t) {
+      if (!t) return 0;
+      const root = t.generatedFrom || t.id;
+      let n = 0;
+      tasks.forEach(function (o) {
+        if (o.id === root || o.generatedFrom === root || o.generatedFrom === t.id) n++;
+      });
+      return Math.max(n, 1);
+    }
+
+    // Uncomplete removes ONLY an untouched generated successor; edited ones stay.
+    function removeUntouchedSuccessor(t) {
+      const idx = tasks.findIndex(function (o) { return o.generatedFrom === t.id && !o.done; });
+      if (idx < 0) return false;
+      const succ = tasks[idx];
+      const pristine = succ.text === t.text &&
+        (succ.description || '') === (t.description || '') &&
+        succ.dueTime === (t.dueTime || '') &&
+        (succ.prio || 0) === (t.prio || 0) &&
+        (succ.projectId || null) === (t.projectId || null) &&
+        JSON.stringify(succ.tags || []) === JSON.stringify(t.tags || taskTags(t.text));
+      if (!pristine) return false;
+      tasks.splice(idx, 1);
+      return true;
     }
 
     function deleteTask(id) {
@@ -483,7 +555,9 @@
         done: false, createdAt: stamped, updatedAt: stamped, completedAt: null,
         due: parsed.due, dueTime: '', prio: parsed.prio,
         projectId: parsed.projectId !== undefined ? parsed.projectId : pid,
-        tags: taskTags(parsed.text), recurrence: null, order: tasks.length
+        tags: taskTags(parsed.text),
+        recurrence: parsed.recurrence && validRecurrence(parsed.recurrence) ? normalizeRecurrence(parsed.recurrence) : null,
+        order: tasks.length
       });
       input.value = '';  // clear the box for the next task
       dueInput.value = ''; // clear the date too
@@ -492,7 +566,7 @@
       renderView();
     }
 
-    // Tiny NLP: p1/p2/p3/p4 priority + today/tomorrow/weekday/date words + +Project.
+    // Tiny NLP: p1-p4 priority + dates + +Project + every-patterns.
     function parseNatural(raw, pickedDue) {
       let text = raw;
       let prio = 0;
@@ -506,13 +580,38 @@
         if (found) { projectId = found.id; text = text.replace(jm[0], ' '); }
         // Unknown +Name stays as normal text (no silent creation from typos).
       }
+      // every day | every weekday(s) | every week | every month | every year |
+      // every monday | every 2 weeks | every month on the 15th (day ignored, anchor kept).
+      let recurrence = null;
+      const em = text.match(/(?:^|\s)every\s+(day|weekdays?|week|month|year|monday|tuesday|wednesday|thursday|friday|saturday|sunday|mon|tue|tues|wed|thu|thur|thurs|fri|sat|sun)(?:\s+on\s+the\s+(\d{1,2})(?:st|nd|rd|th)?)?/i);
+      const im = !em && text.match(/(?:^|\s)every\s+(\d{1,2})\s+(days?|weeks?|months?|years?)/i);
+      if (em) {
+        const w = em[1].toLowerCase();
+        const map = { monday: 1, tuesday: 2, wednesday: 3, thursday: 4, friday: 5, saturday: 6, sunday: 0, mon: 1, tue: 2, tues: 2, wed: 3, thu: 4, thur: 4, thurs: 4, fri: 5, sat: 6, sun: 0 };
+        if (w === 'day') recurrence = { freq: 'daily', interval: 1, afterCompletion: false };
+        else if (w === 'weekday' || w === 'weekdays') recurrence = { freq: 'weekdays', interval: 1, afterCompletion: false };
+        else if (w === 'week') recurrence = { freq: 'weekly', interval: 1, afterCompletion: false };
+        else if (w === 'month') recurrence = { freq: 'monthly', interval: 1, afterCompletion: false };
+        else if (w === 'year') recurrence = { freq: 'yearly', interval: 1, afterCompletion: false };
+        else if (map[w] !== undefined) recurrence = { freq: 'weekly', interval: 1, weekdays: [map[w]], afterCompletion: false };
+        if (recurrence) text = text.replace(em[0], ' ');
+      } else if (im) {
+        const n = Math.min(365, Math.max(1, Number(im[1])));
+        const unit = im[2].toLowerCase();
+        if (unit[0] === 'd') recurrence = { freq: 'daily', interval: n, afterCompletion: false };
+        else if (unit[0] === 'w') recurrence = { freq: 'weekly', interval: n, afterCompletion: false };
+        else if (unit[0] === 'm') recurrence = { freq: 'monthly', interval: n, afterCompletion: false };
+        else recurrence = { freq: 'yearly', interval: Math.min(n, 10), afterCompletion: false };
+        text = text.replace(im[0], ' ');
+      }
       let due = pickedDue || '';
       if (!pickedDue) {
         const hit = parseDueWord(text.toLowerCase());
         if (hit) { due = hit.due; text = text.slice(0, hit.index) + ' ' + text.slice(hit.index + hit.length); }
       }
+      if (recurrence) recurrence.anchorDue = due || '';
       text = text.replace(/\s+/g, ' ').trim();
-      return { text: text, due: due, prio: prio, projectId: projectId };
+      return { text: text, due: due, prio: prio, projectId: projectId, recurrence: recurrence };
     }
 
     function parseDueWord(lower) {
@@ -673,8 +772,7 @@
         startEdit(item, id);
         return; // no re-render; startEdit handles it
       } else if (event.target.type === 'checkbox') {
-        const done = !task.done;
-        updateTask(id, { done: done, completedAt: done ? nowIso() : null });
+        setTaskDone(id, !task.done);
       } else if (event.target.closest('.due-badge')) {
         openDrawer(id, event.target);
         return; // drawer handles its own render
@@ -743,8 +841,7 @@
         const task = getTaskById(id);
         if (!task) return;
         event.preventDefault();
-        const done = !task.done;
-        updateTask(id, { done: done, completedAt: done ? nowIso() : null });
+        setTaskDone(id, !task.done);
         saveTasks();
         renderView(function () { focusRow(id); });
         return;
@@ -844,6 +941,144 @@
         String(date.getDate()).padStart(2, '0');
     }
 
+    // --- Recurrence: validated rule { freq, interval, weekdays, endsAt, count, anchorDue, afterCompletion } ---
+    // freq: daily | weekdays | weekly | monthly | yearly. interval >= 1.
+    // weekdays: [0-6] for weekly custom days (JS getDay). endsAt: YYYY-MM-DD or ''. count: max occurrences or 0.
+    // anchorDue: original due date the schedule counts from (clamped months keep anchor).
+    // afterCompletion: false = schedule-based (default), true = completion-based.
+
+    function validRecurrence(r) {
+      if (r === null || r === undefined) return true;
+      if (!r || typeof r !== 'object') return false;
+      if (RECUR_FREQS.indexOf(r.freq) < 0) return false;
+      if (r.interval !== undefined && (!Number.isInteger(r.interval) || r.interval < 1 || r.interval > 365)) return false;
+      if (r.weekdays !== undefined) {
+        if (!Array.isArray(r.weekdays) || !r.weekdays.length) return false;
+        for (const w of r.weekdays) if (!Number.isInteger(w) || w < 0 || w > 6) return false;
+      }
+      if (r.endsAt !== undefined && r.endsAt !== '' && !isValidDue(r.endsAt)) return false;
+      if (r.count !== undefined && (!Number.isInteger(r.count) || r.count < 0)) return false;
+      if (r.anchorDue !== undefined && r.anchorDue !== '' && !isValidDue(r.anchorDue)) return false;
+      if (r.afterCompletion !== undefined && typeof r.afterCompletion !== 'boolean') return false;
+      return true;
+    }
+
+    function normalizeRecurrence(r) {
+      if (!r) return null;
+      const out = { freq: r.freq, interval: r.interval || 1, afterCompletion: !!r.afterCompletion };
+      if (r.weekdays) out.weekdays = r.weekdays.slice().sort();
+      if (r.endsAt) out.endsAt = r.endsAt;
+      if (r.count) out.count = r.count;
+      if (r.anchorDue) out.anchorDue = r.anchorDue;
+      return out;
+    }
+
+    // Local-date add (no UTC drift): months clamp to month end, anchor preserved by caller.
+    function addDaysStr(due, n) {
+      const d = new Date(Number(due.slice(0, 4)), Number(due.slice(5, 7)) - 1, Number(due.slice(8, 10)));
+      d.setDate(d.getDate() + n);
+      return dayString(d);
+    }
+
+    function addMonthsClamped(y, m, d, n) {
+      const total = (m - 1) + n;
+      const ny = y + Math.floor(total / 12);
+      const nm = (total % 12 + 12) % 12;
+      const dim = new Date(ny, nm + 1, 0).getDate();
+      return dayString(new Date(ny, nm, Math.min(d, dim)));
+    }
+
+    // Next due date strictly after `from`, honoring anchor for monthly/yearly.
+    function nextRecurDate(rule, from) {
+      if (!rule || !isValidDue(from)) return '';
+      const interval = rule.interval || 1;
+      const y = Number(from.slice(0, 4));
+      const m = Number(from.slice(5, 7));
+      const d = Number(from.slice(8, 10));
+      let next = '';
+      if (rule.freq === 'daily') {
+        next = addDaysStr(from, interval);
+      } else if (rule.freq === 'weekdays') {
+        // Next weekday (Mon-Fri) strictly after `from`; interval counts weeks.
+        let cur = addDaysStr(from, (interval - 1) * 7);
+        for (let i = 0; i < 14; i++) {
+          cur = addDaysStr(cur, 1);
+          const dow = new Date(Number(cur.slice(0, 4)), Number(cur.slice(5, 7)) - 1, Number(cur.slice(8, 10))).getDay();
+          if (dow >= 1 && dow <= 5) { next = cur; break; }
+        }
+      } else if (rule.freq === 'weekly') {
+        if (rule.weekdays && rule.weekdays.length) {
+          // Next selected weekday strictly after `from`.
+          const base = new Date(y, m - 1, d);
+          for (let i = 1; i <= 7 * interval + 7; i++) {
+            const cand = new Date(base);
+            cand.setDate(cand.getDate() + i);
+            const weeksOut = Math.floor((i - 1) / 7);
+            if (weeksOut % interval === 0 && rule.weekdays.indexOf(cand.getDay()) >= 0) {
+              next = dayString(cand);
+              break;
+            }
+          }
+        } else {
+          next = addDaysStr(from, 7 * interval);
+        }
+      } else if (rule.freq === 'monthly') {
+        const anchor = rule.anchorDue && isValidDue(rule.anchorDue) ? rule.anchorDue : from;
+        const ay = Number(anchor.slice(0, 4));
+        const am = Number(anchor.slice(5, 7));
+        const ad = Number(anchor.slice(8, 10));
+        // Step by interval months from the anchor until strictly after `from`.
+        let n = interval;
+        while (n <= 1200) {
+          const cand = addMonthsClamped(ay, am, ad, n);
+          if (cand > from) { next = cand; break; }
+          n += interval;
+        }
+      } else if (rule.freq === 'yearly') {
+        const anchor = rule.anchorDue && isValidDue(rule.anchorDue) ? rule.anchorDue : from;
+        const ay = Number(anchor.slice(0, 4));
+        const am = Number(anchor.slice(5, 7));
+        const ad = Number(anchor.slice(8, 10));
+        let n = interval;
+        while (n <= 200) {
+          const cand = addMonthsClamped(ay, am, ad, n * 12);
+          if (cand > from) { next = cand; break; }
+          n += interval;
+        }
+      }
+      if (!next) return '';
+      if (rule.endsAt && next > rule.endsAt) return '';
+      return next;
+    }
+
+    // Skip missed occurrences: advance from the LATER of due date and today.
+    function nextRecurDateCatchUp(rule, due) {
+      const today = dayString(new Date());
+      let base = isValidDue(due) ? due : today;
+      if (base < today) {
+        // Schedule-based: jump to next valid date strictly after yesterday.
+        const yest = addDaysStr(today, -1);
+        let guard = 0;
+        while (base <= yest && guard++ < 500) {
+          const n = nextRecurDate(rule, base);
+          if (!n) return '';
+          base = n;
+        }
+        return base <= yest ? '' : base;
+      }
+      return nextRecurDate(rule, base);
+    }
+
+    function recurLabel(rule) {
+      if (!rule) return '';
+      const n = rule.interval || 1;
+      if (rule.freq === 'weekly' && rule.weekdays && rule.weekdays.length) {
+        const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+        return rule.weekdays.map(function (w) { return days[w]; }).join(', ');
+      }
+      const names = { daily: n === 1 ? 'day' : n + ' days', weekdays: 'weekdays', weekly: n === 1 ? 'week' : n + ' weeks', monthly: n === 1 ? 'month' : n + ' months', yearly: n === 1 ? 'year' : n + ' years' };
+      return names[rule.freq] || rule.freq;
+    }
     // Returns one of: 'overdue' | 'today' | 'tomorrow' | 'soon' | 'later' | 'none'
     function isValidDue(due) {
       if (typeof due !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(due)) return false;
@@ -896,11 +1131,13 @@
 
       // --- Counter: computed from state each time, never stored ---
       const left = tasks.filter(function (task) { return !task.done; }).length;
-      counter.textContent = tasks.length === 0
-        ? ''
-        : left === 0
-          ? 'All done! 🎉'
-          : left + (left === 1 ? ' task' : ' tasks') + ' left';
+      counter.textContent = saveFailed
+        ? 'Could not save — storage full or blocked. Changes kept for this session.'
+        : tasks.length === 0
+          ? ''
+          : left === 0
+            ? 'All done! 🎉'
+            : left + (left === 1 ? ' task' : ' tasks') + ' left';
 
       const todayStr = dayString(new Date());
       const pid = activeProjectId();
@@ -1116,7 +1353,7 @@
         (task.tags || taskTags(task.text)).forEach(function (tag) {
           parts.push({ kind: 'tag', text: tag, tag: tag });
         });
-        if (task.recurrence) parts.push({ kind: 'recur', text: '↻ ' + task.recurrence });
+        if (task.recurrence && validRecurrence(task.recurrence)) parts.push({ kind: 'recur', text: '↻ ' + recurLabel(task.recurrence) });
         const subs = subtaskProgress(task);
         if (subs) parts.push({ kind: 'subs', text: subs });
         if (!parts.length) return null;
@@ -1161,8 +1398,9 @@
     const dDone = document.getElementById('drawer-done');
     const dTags = document.getElementById('drawer-tags');
     const dProject = document.getElementById('drawer-project');
+    const dRecur = document.getElementById('drawer-recur');
+    const dRecurNote = document.getElementById('drawer-recur-note');
     let descTimer = 0;
-
     dTitle.addEventListener('change', function () {
       if (!openTaskId) return;
       const text = dTitle.value.trim();
@@ -1200,8 +1438,7 @@
     });
     dDone.addEventListener('change', function () {
       if (!openTaskId) return;
-      const done = dDone.checked;
-      updateTask(openTaskId, { done: done, completedAt: done ? nowIso() : null });
+      setTaskDone(openTaskId, dDone.checked);
       renderView();
     });
     dTags.addEventListener('change', function () {
@@ -1224,6 +1461,24 @@
       renderView(); // drawer stays open on moved task; list updates underneath
     });
     dProject.addEventListener('keydown', function (e) { e.stopPropagation(); });
+    dRecur.addEventListener('change', function () {
+      if (!openTaskId) return;
+      const task = getTaskById(openTaskId);
+      if (!task) return;
+      const freq = dRecur.value;
+      if (!freq) {
+        updateTask(openTaskId, { recurrence: null });
+      } else {
+        updateTask(openTaskId, {
+          recurrence: normalizeRecurrence({
+            freq: freq, interval: 1, afterCompletion: false,
+            anchorDue: task.due || ''
+          })
+        });
+      }
+      renderView();
+    });
+    dRecur.addEventListener('keydown', function (e) { e.stopPropagation(); });
     drawerClose.addEventListener('click', closeDrawer);
     scrim.addEventListener('click', closeDrawer);
     document.addEventListener('keydown', function (event) {
@@ -1285,6 +1540,19 @@
         dProject.value = task.projectId || '';
         if (task.projectId && !getProjectById(task.projectId)) dProject.value = '';
       }
+      if (document.activeElement !== dRecur) {
+        dRecur.value = (task.recurrence && task.recurrence.freq) || '';
+      }
+      const preview = recurPreview(task);
+      dRecurNote.hidden = !preview;
+      if (preview) dRecurNote.textContent = preview;
+    }
+
+    function recurPreview(task) {
+      if (!task || !validRecurrence(task.recurrence) || !task.recurrence) return '';
+      const next = nextRecurDateCatchUp(task.recurrence, task.due || dayString(new Date()));
+      if (!next) return 'Rule ends — no further dates.';
+      return 'Next: ' + next + (task.dueTime ? ' ' + task.dueTime : '');
     }
 
     // --- Project modal (create / rename / color / icon / delete) ---
@@ -1444,8 +1712,9 @@
     function saveTasks() {
       try {
         localStorage.setItem('todo-tasks', JSON.stringify(tasks));
+        saveFailed = false;
       } catch (e) {
-        counter.textContent = 'Could not save — storage full or blocked. Changes kept for this session.';
+        saveFailed = true;
       }
       updateBadge();
     }
@@ -1457,6 +1726,9 @@
       if ('id' in task && typeof task.id !== 'string') return false;
       if ('dueTime' in task && typeof task.dueTime !== 'string') return false;
       if ('description' in task && typeof task.description !== 'string') return false;
+      if ('generatedFrom' in task && task.generatedFrom !== null && typeof task.generatedFrom !== 'string') return false;
+      if ('occurrence' in task && task.occurrence !== undefined && (!Number.isInteger(task.occurrence) || task.occurrence < 0)) return false;
+      if ('recurrence' in task && task.recurrence !== null && !validRecurrence(task.recurrence)) return false;
       return true;
     }
 
@@ -1476,8 +1748,10 @@
         prio: PRIO_VALUES.indexOf(raw.prio) >= 0 ? raw.prio : 0,
         projectId: typeof raw.projectId === 'string' ? raw.projectId : null,
         tags: Array.isArray(raw.tags) ? raw.tags : taskTags(text),
-        recurrence: raw.recurrence || null,
-        order: typeof raw.order === 'number' ? raw.order : index
+        recurrence: raw.recurrence && validRecurrence(raw.recurrence) ? normalizeRecurrence(raw.recurrence) : null,
+        order: typeof raw.order === 'number' ? raw.order : index,
+        generatedFrom: typeof raw.generatedFrom === 'string' ? raw.generatedFrom : null,
+        occurrence: Number.isInteger(raw.occurrence) && raw.occurrence >= 0 ? raw.occurrence : 0
       };
     }
 

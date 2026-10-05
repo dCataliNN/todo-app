@@ -66,6 +66,7 @@
         <div id="help-popover" popover>
           <strong>Shortcuts</strong>
           <p><kbd>/</kbd> new task · <kbd>j</kbd>/<kbd>k</kbd> move between rows<br><kbd>Alt</kbd>+<kbd>↑</kbd>/<kbd>↓</kbd> reorder · <kbd>Enter</kbd> save · <kbd>Esc</kbd> cancel</p>
+          <p><strong>Quick add:</strong> “Gym every monday at 19:00 #health” — try every day, every weekday, every 2 weeks, +Project, p1–p4.</p>
         </div>
         <ul id="task-list"></ul>
         <p class="counter" id="counter" aria-live="polite"></p>
@@ -123,11 +124,18 @@
         <select id="drawer-project"></select>
       </label>
       <label class="drawer-field">
-        <span>Recurrence</span>
-        <input id="drawer-recur" type="text" disabled placeholder="Phase 5">
+        <span>Repeats</span>
+        <select id="drawer-recur">
+          <option value="">Does not repeat</option>
+          <option value="daily">Every day</option>
+          <option value="weekdays">Every weekday</option>
+          <option value="weekly">Every week</option>
+          <option value="monthly">Every month</option>
+          <option value="yearly">Every year</option>
+        </select>
       </label>
     </div>
-  </aside>
+    <p class="drawer-note" id="drawer-recur-note" hidden></p>
 
   <div class="modal-scrim" id="project-scrim" hidden></div>
   <div class="modal" id="project-modal" role="dialog" aria-modal="true" aria-labelledby="project-modal-title" hidden>
