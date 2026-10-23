@@ -476,11 +476,6 @@
       const out = [];
       const add = function (label, kind, run) { out.push({ label: label, kind: kind, run: run }); };
       const text = query.trim();
-      if (text) {
-        add('Add task “' + text + '”', 'task', function () {
-          if (addTaskFrom(text)) note('Added: ' + text);
-        });
-      }
       add('New task', 'action', function () { input.focus(); });
       CMDK_VIEWS.forEach(function (v) {
         add(v.icon + ' Go to ' + v.label, 'view', function () { setView(v.id); });
@@ -498,7 +493,19 @@
       add('⬇️ Export JSON', 'action', function () { exportBtn.click(); });
       add('⌨️ Keyboard shortcuts', 'action', function () { helpPopover.showPopover(); });
       const q = text.toLowerCase();
-      return out.filter(function (cmd) { return fuzzyMatch(q, cmd.label); });
+      const matches = out.filter(function (cmd) { return fuzzyMatch(q, cmd.label); });
+      if (!text) return matches;
+      // A real command that contains the query wins over the synthetic add row;
+      // otherwise the add row goes first so typing a task name + Enter works.
+      const taskRow = {
+        label: 'Add task “' + text + '”',
+        kind: 'task',
+        run: function () { if (addTaskFrom(text)) note('Added: ' + text); }
+      };
+      const named = matches.some(function (cmd) { return cmd.label.toLowerCase().indexOf(q) !== -1; });
+      if (named) matches.push(taskRow);
+      else matches.unshift(taskRow);
+      return matches;
     }
 
     function renderPaletteList() {

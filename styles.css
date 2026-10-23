@@ -826,7 +826,8 @@
     #cmdk-list li .cmdk-kind {
       margin-left: auto;
       font-size: 0.72rem;
-      color: var(--muted-foreground);
+      color: inherit;
+      opacity: 0.65;
       text-transform: uppercase;
       letter-spacing: 0.04em;
     }
