@@ -1,0 +1,94 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>parseNatural self-check</title>
+<body>
+  <pre id="out">running…</pre>
+  <iframe id="app" src="../index.html" hidden></iframe>
+  <script>
+    // Fixed clock: 2026-10-22 is a Thursday. Dates use the local calendar.
+    const NOW = new Date(2026, 9, 22, 9, 0, 0);
+    const COLLEGE = { id: 'p1', name: 'College', color: '#3b82f6', icon: '🎓', order: 0 };
+    const lines = [];
+    function ok(name, cond, detail) {
+      lines.push((cond ? 'PASS ' : 'FAIL ') + name + (cond ? '' : ' :: ' + JSON.stringify(detail)));
+    }
+    function check(name, exp, got, keys) {
+      const bad = Object.keys(exp).filter(function (k) { return JSON.stringify(exp[k]) !== JSON.stringify(got[k]); });
+      ok(name, !bad.length, bad.map(function (k) { return k + ': got ' + JSON.stringify(got[k]) + ' want ' + JSON.stringify(exp[k]); }));
+    }
+
+    function run(w, parse) {
+      const p = function (raw, picked, skip) {
+        return parse(raw, picked || '', [COLLEGE], NOW, skip);
+      };
+      // 1. Baseline: p1 + weekday, existing priority meaning preserved.
+      let r = p('report p1 friday');
+      check('p1 friday', { text: 'report', due: '2026-10-23', prio: 3 }, r);
+      ok('p1 label is P1 High', w.prioLabel(r.prio) === 'P1 · High', w.prioLabel(r.prio));
+      r = p('report p4 friday');
+      check('p4 stays lowest', { prio: 4 }, r);
+
+      // 2. tomorrow 18:00, next week = next Monday, in N days.
+      check('tomorrow 18:00', { text: 'call mom', due: '2026-10-23', dueTime: '18:00' }, p('call mom tomorrow 18:00'));
+      check('at 19:00 strips "at"', { text: 'gym', dueTime: '19:00' }, p('gym at 19:00'));
+      check('next week is next Monday', { text: 'plan', due: '2026-10-26' }, p('plan next week'));
+      check('in 3 days', { text: 'pay', due: '2026-10-25' }, p('pay in 3 days'));
+      check('in 1 week', { due: '2026-10-29' }, p('pay in 1 week'));
+
+      // 3. Week / month / year rollover.
+      const endOct = new Date(2026, 9, 31, 9, 0, 0);
+      ok('Sat next week from Sat', parse('plan next week', '', [], new Date(2026, 9, 24, 9, 0, 0)).due === '2026-10-26',
+        parse('plan next week', '', [], new Date(2026, 9, 24, 9, 0, 0)).due);
+      ok('Sunday next week', parse('plan next week', '', [], new Date(2026, 9, 25, 9, 0, 0)).due === '2026-10-26',
+        parse('plan next week', '', [], new Date(2026, 9, 25, 9, 0, 0)).due);
+      ok('Monday next week skips today', parse('plan next week', '', [], new Date(2026, 9, 26, 9, 0, 0)).due === '2026-11-02',
+        parse('plan next week', '', [], new Date(2026, 9, 26, 9, 0, 0)).due);
+      ok('month rollover', parse('x tomorrow', '', [], endOct).due === '2026-11-01', parse('x tomorrow', '', [], endOct).due);
+      ok('year rollover', parse('x tomorrow', '', [], new Date(2026, 11, 31, 9, 0, 0)).due === '2027-01-01',
+        parse('x tomorrow', '', [], new Date(2026, 11, 31, 9, 0, 0)).due);
+      ok('weekday skips to next week', parse('x sunday', '', [], NOW).due === '2026-10-25', parse('x sunday', '', [], NOW).due);
+
+      // 4. Impossible date/time stay as text.
+      check('impossible date kept', { text: 'pay 2026-02-31', due: '' }, p('pay 2026-02-31'));
+      check('impossible time kept', { text: 'call 24:99', dueTime: '' }, p('call 24:99'));
+      check('valid ISO date', { text: 'ship', due: '2026-12-01' }, p('ship 2026-12-01'));
+
+      // 5. Projects: case-insensitive, unknown stays text, #tag untouched.
+      check('project case-insensitive', { text: 'essay', projectId: 'p1', projectName: 'College' }, p('essay +college'));
+      check('unknown project stays text', { text: 'essay +Nope' }, p('essay +Nope'));
+      check('tag is not a project', { text: 'essay #work' }, p('essay #work'));
+
+      // 6. Literals and plain numbers survive restore().
+      check('escaped plus', { text: 'buy +1 coffee' }, p('buy \\+1 coffee'));
+      check('quoted span is literal', { text: 'say friday', due: '' }, p('say "friday"'));
+      check('plain numbers untouched', { text: 'pay 100 now' }, p('pay 100 now'));
+
+      // 7. Recurrence phrases.
+      check('every monday', { text: 'gym', recurrence: { freq: 'weekly', interval: 1, weekdays: [1], afterCompletion: false, anchorDue: '' } },
+        p('gym every monday'));
+      check('every 2 weeks', { recurrence: { freq: 'weekly', interval: 2, afterCompletion: false, anchorDue: '' } }, p('gym every 2 weeks'));
+      check('every day + date', { due: '2026-10-23', recurrence: { freq: 'daily', interval: 1, afterCompletion: false, anchorDue: '2026-10-23' } },
+        p('standup every day tomorrow'));
+
+      // 8. Explicit picker outranks inferred date; skipped chip keeps the token.
+      check('picker outranks text', { text: 'friday', due: '2026-11-11', dueExplicit: true }, p('friday', '2026-11-11'));
+      check('skip.due keeps token', { text: 'report friday', due: '' }, p('report friday', '', { due: true }));
+      check('skip.prio keeps token', { text: 'report p1', prio: 0 }, p('report p1', '', { prio: true }));
+      check('skip.recurrence keeps token', { text: 'gym every monday', recurrence: null }, p('gym every monday', '', { recurrence: true }));
+      check('skip.dueTime keeps token', { text: 'at 19:00', dueTime: '' }, p('at 19:00', '', { dueTime: true }));
+    }
+
+    document.getElementById('app').addEventListener('load', function () {
+      const frame = document.getElementById('app');
+      try {
+        run(frame.contentWindow, frame.contentWindow.parseNatural);
+      } catch (e) {
+        lines.push('FAIL harness: ' + e.message);
+      }
+      const failed = lines.filter(function (l) { return l.indexOf('FAIL') === 0; }).length;
+      document.getElementById('out').textContent =
+        lines.join('\n') + '\n\n' + (failed ? failed + ' FAILED' : 'ALL PASS (' + lines.length + ')');
+      document.title = failed ? 'FAIL' : 'PASS';
+    });
+  </script>
+</body>

@@ -649,6 +649,78 @@
       cursor: pointer;
     }
 
+    /* --- Quick-add parsed preview (chips) --- */
+    .nlp-preview {
+      display: none;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 6px;
+      margin: -4px 0 10px;
+      font-size: 0.85rem;
+    }
+
+    .nlp-preview:not(:empty) {
+      display: flex;
+    }
+
+    .nlp-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 2px;
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      background: var(--secondary);
+      color: var(--secondary-foreground);
+      padding: 2px 4px 2px 10px;
+    }
+
+    .nlp-chip.explicit {
+      border-color: var(--ring);
+    }
+
+    .nlp-chip-edit,
+    .nlp-chip-x,
+    .nlp-chip-input {
+      font: inherit;
+      border: none;
+      background: none;
+      color: inherit;
+      cursor: pointer;
+    }
+
+    .nlp-chip-edit {
+      padding: 0;
+    }
+
+    .nlp-chip-x {
+      padding: 0 6px;
+      border-radius: 999px;
+      color: var(--muted-foreground);
+    }
+
+    .nlp-chip-x:hover {
+      color: var(--destructive);
+    }
+
+    .nlp-chip-input {
+      width: 11ch;
+      cursor: text;
+      border-bottom: 1px solid var(--ring);
+    }
+
+    .nlp-chip-input.bad {
+      border-bottom-color: var(--destructive);
+      color: var(--destructive);
+    }
+
+    .nlp-title {
+      color: var(--muted-foreground);
+    }
+
+    .nlp-error {
+      color: var(--destructive);
+    }
+
     /* --- Task rows --- */
     #task-list {
       list-style: none;
@@ -1020,4 +1092,114 @@
 
     @media (prefers-reduced-motion: reduce) {
       .drawer { animation: none; }
+    }
+
+    /* --- Points wallet chip (Steam-points-shop style) --- */
+    .header-actions {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .wallet {
+      display: flex;
+      align-items: center;
+      gap: 9px;
+      padding: 5px 14px 5px 5px;
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      background: var(--secondary);
+      color: var(--secondary-foreground);
+      cursor: pointer;
+      font: inherit;
+      transition: border-color 0.15s ease, transform 0.1s ease;
+    }
+    .wallet:hover { border-color: var(--ring); }
+    .wallet:active { transform: scale(0.97); }
+    .wallet-icon {
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      display: grid;
+      place-items: center;
+      color: var(--primary-foreground);
+      background:
+        radial-gradient(circle at 30% 25%, rgba(255,255,255,0.35), transparent 55%),
+        var(--ring);
+    }
+    .wallet-meta { text-align: left; line-height: 1.15; }
+    .wallet-label {
+      display: block;
+      font-size: 10px;
+      font-weight: 600;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--muted-foreground);
+    }
+    .wallet-points { display: block; font-size: 16px; font-weight: 700; }
+
+    /* --- Points shop modal --- */
+    .shop-modal { width: min(520px, calc(100vw - 32px)); }
+    .shop-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .shop-head h2 { margin: 0; }
+    .shop-head button {
+      border: none;
+      background: none;
+      color: var(--muted-foreground);
+      font-size: 16px;
+      cursor: pointer;
+    }
+    .shop-balance { margin: 0; color: var(--muted-foreground); }
+    .shop-balance strong { color: var(--card-foreground); }
+    .shop-items {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+      gap: 10px;
+    }
+    .shop-item {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      padding: 10px;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      background: var(--background);
+    }
+    .shop-item.equipped { border-color: var(--ring); }
+    .shop-swatch {
+      height: 38px;
+      border-radius: calc(var(--radius) - 4px);
+      border: 1px solid var(--border);
+    }
+    .shop-name { font-size: 14px; font-weight: 600; }
+    .shop-item button {
+      padding: 6px 10px;
+      border: 1px solid var(--border);
+      border-radius: calc(var(--radius) - 4px);
+      background: var(--secondary);
+      color: var(--secondary-foreground);
+      cursor: pointer;
+      font-size: 13px;
+      font-weight: 600;
+    }
+    .shop-item button:disabled { cursor: default; opacity: 0.7; }
+    .shop-item button:not(:disabled):hover { border-color: var(--ring); }
+
+    /* --- Toast --- */
+    .toast {
+      position: fixed;
+      left: 50%;
+      bottom: 24px;
+      transform: translateX(-50%);
+      z-index: 80;
+      padding: 8px 16px;
+      border-radius: 999px;
+      background: var(--foreground);
+      color: var(--background);
+      font-size: 13px;
+      font-weight: 600;
+      box-shadow: var(--shadow-sm);
     }

@@ -6,12 +6,16 @@
     // Urgency rank: P1(3) > P2(2) > P3(1) > P4(4) > None(0). Never numeric-sort prio.
     const PRIO_LABELS = { 0: 'None', 1: 'P3 · Low', 2: 'P2 · Medium', 3: 'P1 · High', 4: 'P4 · Lowest' };
     const PRIO_VALUES = [0, 1, 2, 3, 4];
+    // Typed "pN" means the P-label number, not the stored value: p1 = High (3).
+    const PRIO_BY_LABEL = { 0: 0, 1: 3, 2: 2, 3: 1, 4: 4 };
     const RECUR_FREQS = ['daily', 'weekdays', 'weekly', 'monthly', 'yearly'];
     function prioLabel(v) { return PRIO_LABELS[v] || PRIO_LABELS[0]; }
     function prioRank(v) { return v === 3 ? 0 : v === 2 ? 1 : v === 1 ? 2 : v === 4 ? 3 : 4; }
     let tasks = [];
     let projects = []; // { id, name, color, icon, order, createdAt, updatedAt }
     let saveFailed = false; // storage write failed: counter shows unsaved state
+    let wallet = Points.normalize(readWallet());
+    let toastTimer = null;
     let filter = 'all'; // all | active | completed
     let view = 'inbox'; // inbox | today | upcoming | all | project:<id>
     let search = ''; // free-text query (lowercased)
@@ -26,9 +30,18 @@
     const dueInput = document.getElementById('due-input');
     const searchInput = document.getElementById('search-input');
     const addBtn = document.getElementById('add-btn');
+    const nlpPreview = document.getElementById('nlp-preview');
     const list = document.getElementById('task-list');
     const counter = document.getElementById('counter');
     const themeBtn = document.getElementById('theme-btn');
+    const walletBtn = document.getElementById('wallet-btn');
+    const walletPoints = document.getElementById('wallet-points');
+    const shopModal = document.getElementById('shop-modal');
+    const shopScrim = document.getElementById('shop-scrim');
+    const shopClose = document.getElementById('shop-close');
+    const shopItems = document.getElementById('shop-items');
+    const shopBalance = document.getElementById('shop-balance');
+    const toast = document.getElementById('toast');
     const tagBar = document.getElementById('tag-bar');
     const tagClear = document.getElementById('tag-clear');
     // PWA: register service worker when served over http(s), skip on file://.
@@ -38,10 +51,47 @@
     // --- Load saved data when the page opens ---
     loadTasks();
     loadProjects();
+    loadWalletUI();
     sanitizeTaskProjects();
     render();
     requestPersist();
     updateBadge();
+
+    // --- Points wallet: state logic lives in points.js, this is storage + view ---
+    function readWallet() {
+      try { return JSON.parse(localStorage.getItem(Points.KEY) || 'null'); }
+      catch (e) { return null; }
+    }
+    function saveWallet() {
+      try { localStorage.setItem(Points.KEY, JSON.stringify(wallet)); }
+      catch (e) { note('Could not save points — storage full or blocked.'); }
+    }
+    // Applies the equipped shop color by overriding the theme tokens inline
+    // (inline style wins over both light and dark CSS rules).
+    function applyAccent() {
+      const item = Points.itemById(wallet.equipped);
+      if (item) {
+        document.body.style.setProperty('--primary', item.color);
+        document.body.style.setProperty('--ring', item.color);
+      } else {
+        document.body.style.removeProperty('--primary');
+        document.body.style.removeProperty('--ring');
+      }
+    }
+    function loadWalletUI() {
+      applyAccent();
+      renderWallet();
+    }
+    function renderWallet() {
+      walletPoints.textContent = wallet.points;
+      shopBalance.textContent = wallet.points;
+    }
+    function showToast(text) {
+      toast.textContent = text;
+      toast.hidden = false;
+      clearTimeout(toastTimer);
+      toastTimer = setTimeout(function () { toast.hidden = true; }, 2200);
+    }
     function newId() {
       if (typeof crypto !== 'undefined' && crypto.randomUUID) return crypto.randomUUID();
       return 't' + Date.now().toString(36) + Math.random().toString(36).slice(2, 10);
@@ -79,6 +129,15 @@
         return { task: getTaskById(id), generatedId: null };
       }
       updateTask(id, { done: true, completedAt: nowIso() });
+      // Points: single award route; uncompleting never claws points back.
+      const beforeAward = wallet.awarded.indexOf(id) >= 0;
+      const gained = Points.award(wallet, id, new Date());
+      if (gained > 0) {
+        saveWallet();
+        showToast('+' + gained + ' points');
+      } else if (!beforeAward) {
+        showToast('Daily cap reached — points reset tomorrow.');
+      }
       const generatedId = maybeGenerateSuccessor(getTaskById(id));
       saveTasks();
       return { task: getTaskById(id), generatedId: generatedId };
@@ -547,44 +606,82 @@
       const raw = input.value.trim(); // trim() ignores "   "-only input
       if (raw === '') return;         // do nothing on empty input
 
-      const parsed = parseNatural(raw, dueInput.value);
+      const parsed = naturalPreview();
       const stamped = nowIso();
       const pid = activeProjectId();
       tasks.push({
         id: newId(), text: parsed.text, description: '',
         done: false, createdAt: stamped, updatedAt: stamped, completedAt: null,
-        due: parsed.due, dueTime: '', prio: parsed.prio,
+        due: parsed.due, dueTime: parsed.dueTime || '', prio: parsed.prio,
         projectId: parsed.projectId !== undefined ? parsed.projectId : pid,
         tags: taskTags(parsed.text),
         recurrence: parsed.recurrence && validRecurrence(parsed.recurrence) ? normalizeRecurrence(parsed.recurrence) : null,
         order: tasks.length
       });
+      if (!saveTasks()) {
+        tasks.pop();            // keep state identical to storage
+        saveFailed = false;
+        note('Storage full — task not added. Your text is still in the box.');
+        refreshPreview();
+        return;
+      }
       input.value = '';  // clear the box for the next task
       dueInput.value = ''; // clear the date too
+      clearNlp();
+      refreshPreview();
       input.focus();     // keep the cursor ready for fast typing
-      saveTasks();
       renderView();
     }
-
-    // Tiny NLP: p1-p4 priority + dates + +Project + every-patterns.
-    function parseNatural(raw, pickedDue) {
-      let text = raw;
+    // Pure function of (raw, pickedDue, projectList, nowDate, skip): no DOM, no tasks.
+    // nowDate is a Date used as "today" (fixed clock in tests).
+    // skip.<field> = true keeps that token as ordinary text (removed preview chip).
+    function parseNatural(raw, pickedDue, projectList, nowDate, skip) {
+      skip = skip || {};
+      // Sentinel must not collide with digits in ordinary text ("pay 100").
+      const DV = '\u0001';
+      const projects = projectList || [];
+      const today = nowDate ? new Date(nowDate) : new Date();
+      // Protect quoted spans and backslash escapes: quoted text is literal.
+      const literals = [];
+      let text = String(raw).replace(/\\(.)/g, function (m, c) {
+        literals.push(c);
+        return DV + (literals.length - 1) + DV;
+      });
+      text = text.replace(/"([^"]*)"|'([^']*)'/g, function (m, a, b) {
+        literals.push(a !== undefined ? a : b);
+        return DV + (literals.length - 1) + DV;
+      });
+      const restore = function (s) {
+        return s.replace(new RegExp(DV + '(\\d+)' + DV, 'g'), function (m, i) { return literals[Number(i)]; });
+      };
+      // A removed recurrence chip must not be re-eaten as a weekday date.
+      if (skip.recurrence) {
+        text = text.replace(/(^|\s)every\s+[a-z]+/gi, function (m, sp) {
+          literals.push(m.slice(sp.length));
+          return sp + DV + (literals.length - 1) + DV;
+        });
+      }
       let prio = 0;
-      const pm = text.match(/(?:^|\s)p([1234])(?=\s|$)/i);
-      if (pm) { prio = Number(pm[1]); text = text.replace(pm[0], ' '); }
+      const pm = !skip.prio && text.match(/(?:^|\s)p([1234])(?=\s|$)/i);
+      if (pm) { prio = PRIO_BY_LABEL[Number(pm[1])]; text = text.replace(pm[0], ' '); }
       // +Project (case-insensitive, exact name match only — never auto-create).
       let projectId;
-      const jm = text.match(/(?:^|\s)\+([\p{L}\p{N}_-]+)/u);
+      let projectName = '';
+      const jm = !skip.project && text.match(/(?:^|\s)\+([\p{L}\p{N}_-]+)/u);
       if (jm) {
         const found = projects.filter(function (p) { return p.name.toLowerCase() === jm[1].toLowerCase(); })[0];
-        if (found) { projectId = found.id; text = text.replace(jm[0], ' '); }
+        if (found) {
+          projectId = found.id; projectName = found.name;
+          text = text.replace(jm[0], ' ');
+        }
         // Unknown +Name stays as normal text (no silent creation from typos).
       }
       // every day | every weekday(s) | every week | every month | every year |
       // every monday | every 2 weeks | every month on the 15th (day ignored, anchor kept).
       let recurrence = null;
-      const em = text.match(/(?:^|\s)every\s+(day|weekdays?|week|month|year|monday|tuesday|wednesday|thursday|friday|saturday|sunday|mon|tue|tues|wed|thu|thur|thurs|fri|sat|sun)(?:\s+on\s+the\s+(\d{1,2})(?:st|nd|rd|th)?)?/i);
-      const im = !em && text.match(/(?:^|\s)every\s+(\d{1,2})\s+(days?|weeks?|months?|years?)/i);
+      let recurrenceText = '';
+      const em = !skip.recurrence && text.match(/(?:^|\s)every\s+(day|weekdays?|week|month|year|monday|tuesday|wednesday|thursday|friday|saturday|sunday|mon|tue|tues|wed|thu|thur|thurs|fri|sat|sun)(?:\s+on\s+the\s+(\d{1,2})(?:st|nd|rd|th)?)?/i);
+      const im = !skip.recurrence && !em && text.match(/(?:^|\s)every\s+(\d{1,2})\s+(days?|weeks?|months?|years?)/i);
       if (em) {
         const w = em[1].toLowerCase();
         const map = { monday: 1, tuesday: 2, wednesday: 3, thursday: 4, friday: 5, saturday: 6, sunday: 0, mon: 1, tue: 2, tues: 2, wed: 3, thu: 4, thur: 4, thurs: 4, fri: 5, sat: 6, sun: 0 };
@@ -594,7 +691,7 @@
         else if (w === 'month') recurrence = { freq: 'monthly', interval: 1, afterCompletion: false };
         else if (w === 'year') recurrence = { freq: 'yearly', interval: 1, afterCompletion: false };
         else if (map[w] !== undefined) recurrence = { freq: 'weekly', interval: 1, weekdays: [map[w]], afterCompletion: false };
-        if (recurrence) text = text.replace(em[0], ' ');
+        if (recurrence) { recurrenceText = em[0].trim(); text = text.replace(em[0], ' '); }
       } else if (im) {
         const n = Math.min(365, Math.max(1, Number(im[1])));
         const unit = im[2].toLowerCase();
@@ -602,21 +699,57 @@
         else if (unit[0] === 'w') recurrence = { freq: 'weekly', interval: n, afterCompletion: false };
         else if (unit[0] === 'm') recurrence = { freq: 'monthly', interval: n, afterCompletion: false };
         else recurrence = { freq: 'yearly', interval: Math.min(n, 10), afterCompletion: false };
-        text = text.replace(im[0], ' ');
+        recurrenceText = im[0].trim(); text = text.replace(im[0], ' ');
+      }
+      // Time HH:mm (explicit picker outranks inferred). Optional "at" prefix.
+      let dueTime = '';
+      const tm = !skip.dueTime && text.match(/(?:^|\s)(?:at\s+)?(\d{1,2}):(\d{2})(?=\s|$)/i);
+      if (tm) {
+        const hh = Number(tm[1]);
+        const mm = Number(tm[2]);
+        if (hh >= 0 && hh <= 23 && mm >= 0 && mm <= 59) {
+          dueTime = (hh < 10 ? '0' + hh : '' + hh) + ':' + (mm < 10 ? '0' + mm : '' + mm);
+          text = text.replace(tm[0], ' ');
+        }
+        // Invalid like 24:99 stays as normal text (preview flags it).
       }
       let due = pickedDue || '';
-      if (!pickedDue) {
-        const hit = parseDueWord(text.toLowerCase());
-        if (hit) { due = hit.due; text = text.slice(0, hit.index) + ' ' + text.slice(hit.index + hit.length); }
+      const dueExplicit = !!pickedDue;
+      if (!pickedDue && !skip.due) {
+        const hit = parseDueWord(text.toLowerCase(), today);
+        if (hit) {
+          due = hit.due;
+          text = text.slice(0, hit.index) + ' ' + text.slice(hit.index + hit.length);
+        }
       }
       if (recurrence) recurrence.anchorDue = due || '';
-      text = text.replace(/\s+/g, ' ').trim();
-      return { text: text, due: due, prio: prio, projectId: projectId, recurrence: recurrence };
+      text = restore(text).replace(/\s+/g, ' ').trim();
+      return { text: text, due: due, dueExplicit: dueExplicit, dueTime: dueTime, prio: prio,
+        projectId: projectId, projectName: projectName, recurrence: recurrence, recurrenceText: recurrenceText };
     }
 
-    function parseDueWord(lower) {
-      const today = new Date();
+    function parseDueWord(lower, base) {
       const iso = function (d) { return dayString(d); };
+      const dayOf = function (match) { return { index: match.index + (match[0].startsWith(' ') ? 1 : 0), length: match[1].length }; };
+      const today = base ? new Date(base) : new Date();
+      today.setHours(12, 0, 0, 0); // noon avoids DST edge slips on setDate
+      // "next week" = the Monday of next week.
+      const nw = lower.match(/(?:^|\s)(next\s+week)(?=\s|$)/);
+      if (nw) {
+        const d = new Date(today);
+        let delta = (1 - d.getDay() + 7) % 7;
+        if (delta === 0) delta = 7;
+        d.setDate(d.getDate() + delta);
+        return Object.assign({ due: iso(d) }, dayOf(nw));
+      }
+      // "in N days" (also "in N weeks").
+      const id = lower.match(/(?:^|\s)(in\s+(\d{1,3})\s+(days?|weeks?))(?=\s|$)/);
+      if (id) {
+        const n = Math.min(365, Math.max(0, Number(id[2]))) * (id[3].toLowerCase()[0] === 'w' ? 7 : 1);
+        const d = new Date(today);
+        d.setDate(d.getDate() + n);
+        return Object.assign({ due: iso(d) }, dayOf(id));
+      }
       const words = {
         today: 0, tonight: 0, tomorrow: 1, tmw: 1, tmorrow: 1,
         monday: 1, tuesday: 2, wednesday: 3, thursday: 4,
@@ -638,11 +771,200 @@
         }
         return { due: iso(d), index: m.index + (m[0].startsWith(' ') ? 1 : 0), length: m[1].length };
       }
-      // Explicit 2026-10-05 or 05/10 stays valid via isValidDue later.
+      // Explicit 2026-10-05: impossible dates stay as text and get flagged in the preview.
       const dm = lower.match(/(?:^|\s)(\d{4}-\d{2}-\d{2})(?=\s|$)/);
-      if (dm) return { due: dm[1], index: dm.index + (dm[0].startsWith(' ') ? 1 : 0), length: dm[1].length };
+      if (dm && isValidDue(dm[1])) return Object.assign({ due: dm[1] }, dayOf(dm));
       return null;
     }
+
+    // --- Quick-add preview: parsed fields as removable/editable chips ---
+    // Removed chip = token demoted back to literal text (nlpSkip); edited chip =
+    // explicit override (nlpEdit) that outranks the text inference.
+    let nlpSkip = {};
+    let nlpEdit = {};
+    const NL_HINTS = {
+      due: 'due date as YYYY-MM-DD (blank clears)',
+      dueTime: 'time as HH:mm (blank clears)',
+      prio: 'priority p0–p4 (p1 = High)',
+      project: 'exact project name (blank clears)',
+      recurrence: 'every day / every monday / every 2 weeks (blank clears)'
+    };
+    function prioLabelNum(v) { return v === 3 ? 1 : v === 2 ? 2 : v === 1 ? 3 : v === 4 ? 4 : 0; }
+    function clearNlp() { nlpSkip = {}; nlpEdit = {}; }
+
+    function naturalPreview() {
+      const p = parseNatural(input.value.trim(), dueInput.value, projects, undefined, nlpSkip);
+      if (nlpEdit.due !== undefined && !nlpSkip.due) { p.due = nlpEdit.due; p.dueExplicit = true; }
+      if (nlpEdit.dueTime !== undefined && !nlpSkip.dueTime) p.dueTime = nlpEdit.dueTime;
+      if (nlpEdit.prio !== undefined && !nlpSkip.prio) p.prio = nlpEdit.prio;
+      if (nlpEdit.project !== undefined && !nlpSkip.project) {
+        p.projectId = nlpEdit.project ? nlpEdit.project.id : undefined;
+        p.projectName = nlpEdit.project ? nlpEdit.project.name : '';
+      }
+      if (nlpEdit.recurrence !== undefined && !nlpSkip.recurrence) p.recurrence = nlpEdit.recurrence;
+      if (p.recurrence) p.recurrence.anchorDue = p.due || '';
+      return p;
+    }
+
+    function dueChipLabel(due) {
+      const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+      const d = new Date(Number(due.slice(0, 4)), Number(due.slice(5, 7)) - 1, Number(due.slice(8, 10)));
+      const wd = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][d.getDay()];
+      return wd + ' ' + due.slice(8, 10).replace(/^0/, '') + ' ' + months[d.getMonth()];
+    }
+
+    function nlpProblems(raw) {
+      const out = [];
+      const plain = raw.replace(/"[^"]*"|'[^']*'/g, ' '); // quoted text is literal
+      (plain.match(/\b\d{4}-\d{2}-\d{2}\b/g) || []).forEach(function (d) {
+        if (!isValidDue(d)) out.push(d + ' is not a real date — kept as text.');
+      });
+      (plain.match(/\b\d{1,2}:\d{2}\b/g) || []).forEach(function (t) {
+        if (Number(t.split(':')[0]) > 23 || Number(t.split(':')[1]) > 59) {
+          out.push(t + ' is not a real time — kept as text.');
+        }
+      });
+      return out;
+    }
+
+    function chip(field, label, explicit) {
+      const wrap = document.createElement('span');
+      wrap.className = 'nlp-chip' + (explicit ? ' explicit' : '');
+      wrap.dataset.field = field;
+      const edit = document.createElement('button');
+      edit.type = 'button';
+      edit.className = 'nlp-chip-edit';
+      edit.textContent = label;
+      edit.title = 'Edit ' + NL_HINTS[field];
+      const x = document.createElement('button');
+      x.type = 'button';
+      x.className = 'nlp-chip-x';
+      x.textContent = '✕';
+      x.title = 'Remove ' + label;
+      x.setAttribute('aria-label', 'Remove ' + label);
+      wrap.append(edit, x);
+      return wrap;
+    }
+
+    function refreshPreview() {
+      if (!nlpPreview) return;
+      nlpPreview.textContent = '';
+      const raw = input.value.trim();
+      if (!raw) return;
+      const p = naturalPreview();
+      const chips = [];
+      if (p.due) chips.push(['due', 'Due ' + dueChipLabel(p.due), p.dueExplicit || nlpEdit.due !== undefined]);
+      if (p.dueTime) chips.push(['dueTime', 'At ' + p.dueTime, nlpEdit.dueTime !== undefined]);
+      if (p.prio || nlpEdit.prio !== undefined) chips.push(['prio', prioLabel(p.prio), nlpEdit.prio !== undefined]);
+      if (p.projectId !== undefined) chips.push(['project', '+' + p.projectName, nlpEdit.project !== undefined]);
+      if (p.recurrence) chips.push(['recurrence', 'Every ' + recurLabel(p.recurrence).toLowerCase(), !!nlpEdit.recurrence]);
+      chips.forEach(function (c) { nlpPreview.append(chip(c[0], c[1], c[2])); });
+      if (p.text) {
+        const title = document.createElement('span');
+        title.className = 'nlp-title';
+        title.textContent = p.text;
+        nlpPreview.append(title);
+      }
+      const problems = nlpProblems(raw);
+      nlpPreview.setAttribute('aria-live', problems.length ? 'polite' : 'off'); // chips change per keystroke
+      problems.forEach(function (msg) {
+        const err = document.createElement('span');
+        err.className = 'nlp-error';
+        err.textContent = msg;
+        nlpPreview.append(err);
+      });
+    }
+
+    function chipSeed(field, p) {
+      if (field === 'due') return p.due || '';
+      if (field === 'dueTime') return p.dueTime || '';
+      if (field === 'prio') return 'p' + prioLabelNum(p.prio);
+      if (field === 'project') return p.projectName || '';
+      if (field === 'recurrence') {
+        return p.recurrenceText || ('every ' + recurLabel(p.recurrence).toLowerCase());
+      }
+      return '';
+    }
+
+    // Returns true when the value was accepted; false leaves the editor open.
+    function applyChipEdit(field, rawValue) {
+      const v = String(rawValue).trim();
+      if (field === 'due') {
+        if (v === '') { nlpEdit.due = ''; return true; }
+        if (!isValidDue(v)) return false;
+        nlpEdit.due = v; return true;
+      }
+      if (field === 'dueTime') {
+        if (v === '') { nlpEdit.dueTime = ''; return true; }
+        if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(v)) return false;
+        nlpEdit.dueTime = v; return true;
+      }
+      if (field === 'prio') {
+        const m = /^p?([0-4])$/i.exec(v);
+        if (!m) return false;
+        nlpEdit.prio = PRIO_BY_LABEL[Number(m[1])];
+        return true;
+      }
+      if (field === 'project') {
+        if (v === '') { nlpEdit.project = null; return true; }
+        const hit = projects.filter(function (pr) { return pr.name.toLowerCase() === v.toLowerCase(); })[0];
+        if (!hit) return false;
+        nlpEdit.project = { id: hit.id, name: hit.name };
+        return true;
+      }
+      if (field === 'recurrence') {
+        if (v === '') { nlpEdit.recurrence = null; return true; }
+        const parsed = parseNatural(/^every\b/i.test(v) ? v : 'every ' + v, '', projects, undefined,
+          { due: true, dueTime: true, prio: true, project: true });
+        if (!parsed.recurrence || parsed.text) return false;
+        nlpEdit.recurrence = parsed.recurrence;
+        return true;
+      }
+      return false;
+    }
+
+    function startChipEdit(wrap, btn) {
+      const field = wrap.dataset.field;
+      const p = naturalPreview();
+      const inp = document.createElement('input');
+      inp.type = 'text';
+      inp.className = 'nlp-chip-input';
+      inp.value = chipSeed(field, p);
+      inp.setAttribute('aria-label', NL_HINTS[field]);
+      inp.title = NL_HINTS[field];
+      btn.replaceWith(inp);
+      inp.focus();
+      inp.select();
+      let done = false;
+      const finish = function (accept) {
+        if (done) return;
+        done = true;
+        if (accept && applyChipEdit(field, inp.value)) { refreshPreview(); input.focus(); return; }
+        inp.classList.add('bad');
+        note('Not valid — ' + NL_HINTS[field]);
+      };
+      inp.addEventListener('keydown', function (e) {
+        e.stopPropagation(); // keep global shortcuts out of the chip editor
+        if (e.key === 'Enter') { e.preventDefault(); finish(true); }
+        else if (e.key === 'Escape') { e.preventDefault(); done = true; refreshPreview(); }
+      });
+      inp.addEventListener('blur', function () { finish(true); });
+    }
+
+    nlpPreview.addEventListener('click', function (event) {
+      const x = event.target.closest('.nlp-chip-x');
+      if (x) {
+        const field = x.closest('.nlp-chip').dataset.field;
+        if (field === 'due' && dueInput.value && nlpEdit.due === undefined) dueInput.value = '';
+        else if (nlpEdit[field] !== undefined) delete nlpEdit[field];
+        else nlpSkip[field] = true; // token goes back to literal text
+        refreshPreview();
+        input.focus();
+        return;
+      }
+      const edit = event.target.closest('.nlp-chip-edit');
+      if (edit) startChipEdit(edit.closest('.nlp-chip'), edit);
+    });
 
     // Sidebar views + projects + tag cloud + live search.
     document.querySelector('.sidebar').addEventListener('click', function (event) {
@@ -685,6 +1007,9 @@
     input.addEventListener('keydown', function (event) {
       if (event.key === 'Enter') addTask();
     });
+    input.addEventListener('input', refreshPreview);
+    dueInput.addEventListener('change', refreshPreview);
+    refreshPreview();
 
     // --- Filter buttons ---
     document.querySelector('.filters').addEventListener('click', function (event) {
@@ -1128,6 +1453,7 @@
     // --- Draw the list from the tasks array ---
     function render() {
       list.innerHTML = ''; // wipe and rebuild (simple + fine at this size)
+      renderWallet();
 
       // --- Counter: computed from state each time, never stored ---
       const left = tasks.filter(function (task) { return !task.done; }).length;
@@ -1468,6 +1794,8 @@
       const freq = dRecur.value;
       if (!freq) {
         updateTask(openTaskId, { recurrence: null });
+      } else if (task.recurrence && task.recurrence.freq === freq) {
+        return; // same rule: keep interval, custom weekdays and end date
       } else {
         updateTask(openTaskId, {
           recurrence: normalizeRecurrence({
@@ -1620,6 +1948,77 @@
       editingProjectId = null;
     }
 
+    // --- Points shop view ---
+    function openShop() {
+      renderShop();
+      shopModal.hidden = false;
+      shopScrim.hidden = false;
+      shopClose.focus();
+    }
+    function closeShop() {
+      shopModal.hidden = true;
+      shopScrim.hidden = true;
+      walletBtn.focus();
+    }
+    function renderShop() {
+      renderWallet(); // chip + shop balance share state; never let them diverge
+      shopItems.innerHTML = '';
+      Points.ITEMS.forEach(function (item) {
+        const owned = wallet.owned.indexOf(item.id) >= 0;
+        const equipped = wallet.equipped === item.id;
+        const card = document.createElement('div');
+        card.className = 'shop-item' + (equipped ? ' equipped' : '');
+        const swatch = document.createElement('div');
+        swatch.className = 'shop-swatch';
+        swatch.style.background = item.color;
+        const name = document.createElement('span');
+        name.className = 'shop-name';
+        name.textContent = item.name;
+        const btn = document.createElement('button');
+        if (equipped) {
+          btn.textContent = 'Equipped';
+          btn.disabled = true;
+          btn.className = 'equipped';
+        } else if (owned) {
+          btn.textContent = 'Equip';
+          btn.addEventListener('click', function () { buyOrEquip(item.id); });
+        } else {
+          btn.textContent = 'Buy · ' + item.cost;
+          btn.disabled = wallet.points < item.cost;
+          btn.addEventListener('click', function () { buyOrEquip(item.id); });
+        }
+        card.append(swatch, name, btn);
+        shopItems.append(card);
+      });
+    }
+    // Buy (then auto-equip) or switch between owned themes.
+    function buyOrEquip(itemId) {
+      if (wallet.owned.indexOf(itemId) >= 0) {
+        if (Points.equip(wallet, itemId)) {
+          saveWallet();
+          applyAccent();
+          renderShop();
+        }
+        return;
+      }
+      const res = Points.redeem(wallet, itemId);
+      if (!res.ok) {
+        if (res.reason === 'funds') showToast('Need ' + res.missing + ' more points.');
+        return; // unknown/owned ids: nothing to do
+      }
+      Points.equip(wallet, itemId); // auto-equip the fresh purchase
+      saveWallet();
+      applyAccent();
+      showToast('Unlocked ' + res.item.name + '!');
+      renderShop();
+    }
+    walletBtn.addEventListener('click', openShop);
+    shopClose.addEventListener('click', closeShop);
+    shopScrim.addEventListener('click', closeShop);
+    document.addEventListener('keydown', function (event) {
+      if (event.key === 'Escape' && !shopModal.hidden) closeShop();
+    });
+
     projectSave.addEventListener('click', function () {
       const name = projectName.value.trim();
       if (!name) { projectName.focus(); return; }
@@ -1630,6 +2029,7 @@
         setView('project:' + p.id);
       }
       closeProjectModal();
+      refreshPreview(); // chip labels follow project renames
       renderView();
     });
     projectName.addEventListener('keydown', function (e) {
@@ -1717,6 +2117,7 @@
         saveFailed = true;
       }
       updateBadge();
+      return !saveFailed;
     }
 
     function validTask(task) {

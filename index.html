@@ -16,7 +16,21 @@
   <div class="app">
     <div class="header">
       <h1>My To-Do List</h1>
-      <button id="theme-btn" aria-label="Toggle dark mode">🌙</button>
+      <div class="header-actions">
+        <button id="wallet-btn" class="wallet" aria-haspopup="dialog" aria-controls="shop-modal" title="Points shop">
+          <span class="wallet-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="12" r="3.2"></circle>
+              <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33h.01a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51h.01a1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82v.01a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+            </svg>
+          </span>
+          <span class="wallet-meta">
+            <span class="wallet-label">Your balance</span>
+            <span class="wallet-points" id="wallet-points">0</span>
+          </span>
+        </button>
+        <button id="theme-btn" aria-label="Toggle dark mode">🌙</button>
+      </div>
     </div>
 
     <div class="layout">
@@ -42,6 +56,7 @@
           <input id="due-input" type="date" aria-label="Due date (optional)">
           <button id="add-btn">Add</button>
         </div>
+        <div class="nlp-preview" id="nlp-preview"></div>
         <div class="input-row search-row">
           <input id="search-input" type="search" placeholder="Search tasks…" autocomplete="off" aria-label="Search tasks">
         </div>
@@ -66,7 +81,7 @@
         <div id="help-popover" popover>
           <strong>Shortcuts</strong>
           <p><kbd>/</kbd> new task · <kbd>j</kbd>/<kbd>k</kbd> move between rows<br><kbd>Alt</kbd>+<kbd>↑</kbd>/<kbd>↓</kbd> reorder · <kbd>Enter</kbd> save · <kbd>Esc</kbd> cancel</p>
-          <p><strong>Quick add:</strong> “Gym every monday at 19:00 #health” — try every day, every weekday, every 2 weeks, +Project, p1–p4.</p>
+          <p><strong>Quick add:</strong> “Gym every monday at 19:00 #health” — try every day, every weekday, every 2 weeks, next week, in 3 days, 18:00, +Project, p1–p4.</p>
         </div>
         <ul id="task-list"></ul>
         <p class="counter" id="counter" aria-live="polite"></p>
@@ -136,6 +151,7 @@
       </label>
     </div>
     <p class="drawer-note" id="drawer-recur-note" hidden></p>
+  </aside>
 
   <div class="modal-scrim" id="project-scrim" hidden></div>
   <div class="modal" id="project-modal" role="dialog" aria-modal="true" aria-labelledby="project-modal-title" hidden>
@@ -166,6 +182,20 @@
     </div>
   </div>
 
+  <div class="modal-scrim" id="shop-scrim" hidden></div>
+  <div class="modal shop-modal" id="shop-modal" role="dialog" aria-modal="true" aria-labelledby="shop-title" hidden>
+    <div class="shop-head">
+      <h2 id="shop-title">Points shop</h2>
+      <button id="shop-close" aria-label="Close points shop">✕</button>
+    </div>
+    <p class="shop-balance">Balance: <strong id="shop-balance">0</strong> points</p>
+    <div class="shop-items" id="shop-items"></div>
+    <p class="modal-note">Earn 10 points per completed task. Daily cap: 100. Completing the same task again never double-pays.</p>
+  </div>
+
+  <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+
+  <script src="./points.js"></script>
   <script src="./app.js"></script>
 </body>
 </html>
