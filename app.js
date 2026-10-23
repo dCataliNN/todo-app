@@ -31,6 +31,13 @@
     const searchInput = document.getElementById('search-input');
     const addBtn = document.getElementById('add-btn');
     const nlpPreview = document.getElementById('nlp-preview');
+    const presetBtn = document.getElementById('preset-btn');
+    const themeMenu = document.getElementById('theme-menu');
+    const themeGrid = document.getElementById('theme-grid');
+    const paletteBtn = document.getElementById('palette-btn');
+    const cmdk = document.getElementById('cmdk');
+    const cmdkInput = document.getElementById('cmdk-input');
+    const cmdkList = document.getElementById('cmdk-list');
     const list = document.getElementById('task-list');
     const counter = document.getElementById('counter');
     const themeBtn = document.getElementById('theme-btn');
@@ -391,6 +398,190 @@
       if (save) localStorage.setItem('todo-theme', dark ? 'dark' : 'light');
     }
 
+    // --- Theme presets: tokens copied from tweakcn registry themes ---
+    const PRESETS = [
+      { id: 'default', name: 'Cloud', color: 'oklch(0.6225 0.1882 254.0875)' },
+      { id: 'claude', name: 'Claude', color: 'oklch(0.6171 0.1375 39.0427)' },
+      { id: 'minimal', name: 'Modern minimal', color: 'oklch(0.6231 0.1880 259.8145)' },
+      { id: 'catppuccin', name: 'Catppuccin', color: 'oklch(0.5547 0.2503 297.0156)' },
+      { id: 'cyberpunk', name: 'Cyberpunk', color: 'oklch(0.6726 0.2904 341.4084)' },
+      { id: 'mono', name: 'Mono', color: 'oklch(0.5555 0 0)' }
+    ];
+    let preset = 'default';
+
+    function applyPreset(id, save) {
+      preset = PRESETS.some(function (p) { return p.id === id; }) ? id : 'default';
+      if (preset === 'default') document.body.removeAttribute('data-preset');
+      else document.body.dataset.preset = preset;
+      paintPresetMenu();
+      if (save) { try { localStorage.setItem('todo-preset', preset); } catch (e) { /* keep going */ } }
+    }
+
+    function initPreset() {
+      let saved = 'default';
+      try { saved = localStorage.getItem('todo-preset') || 'default'; } catch (e) { /* keep going */ }
+      applyPreset(saved, false);
+    }
+
+    function paintPresetMenu() {
+      if (!themeGrid) return;
+      themeGrid.textContent = '';
+      PRESETS.forEach(function (p) {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'theme-swatch';
+        btn.dataset.preset = p.id;
+        btn.setAttribute('aria-pressed', p.id === preset ? 'true' : 'false');
+        const dot = document.createElement('i');
+        dot.style.background = p.color;
+        dot.setAttribute('aria-hidden', 'true');
+        btn.append(dot, document.createTextNode(p.name));
+        themeGrid.append(btn);
+      });
+    }
+
+    initPreset();
+    presetBtn.addEventListener('click', function () { themeMenu.togglePopover(); });
+    themeGrid.addEventListener('click', function (event) {
+      const btn = event.target.closest('.theme-swatch');
+      if (!btn) return;
+      applyPreset(btn.dataset.preset, true);
+      themeMenu.hidePopover();
+      note('Theme: ' + PRESETS.filter(function (p) { return p.id === preset; })[0].name);
+    });
+
+    // --- Command palette (Ctrl/Cmd+K): views, actions and quick task entry ---
+    const CMDK_VIEWS = [
+      { id: 'inbox', label: 'Inbox', icon: '📥' },
+      { id: 'today', label: 'Today', icon: '📅' },
+      { id: 'upcoming', label: 'Upcoming', icon: '🔜' },
+      { id: 'all', label: 'All tasks', icon: '📋' }
+    ];
+    let cmdkCommands = [];
+    let cmdkActive = 0;
+    let cmdkReturnFocus = null;
+
+    // Subsequence match: "gtu" finds "Go to Upcoming".
+    function fuzzyMatch(needle, hay) {
+      if (!needle) return true;
+      const lower = hay.toLowerCase();
+      let i = 0;
+      for (let c = 0; c < lower.length && i < needle.length; c++) {
+        if (lower[c] === needle[i]) i++;
+      }
+      return i === needle.length;
+    }
+
+    function paletteCommands(query) {
+      const out = [];
+      const add = function (label, kind, run) { out.push({ label: label, kind: kind, run: run }); };
+      const text = query.trim();
+      if (text) {
+        add('Add task “' + text + '”', 'task', function () {
+          if (addTaskFrom(text)) note('Added: ' + text);
+        });
+      }
+      add('New task', 'action', function () { input.focus(); });
+      CMDK_VIEWS.forEach(function (v) {
+        add(v.icon + ' Go to ' + v.label, 'view', function () { setView(v.id); });
+      });
+      projects.forEach(function (p) {
+        add((p.icon || '📁') + ' ' + p.name, 'project', function () { setView('project:' + p.id); });
+      });
+      add((document.body.classList.contains('dark') ? '☀️' : '🌙') + ' Toggle dark mode', 'action', function () {
+        applyTheme(!document.body.classList.contains('dark'), true);
+      });
+      PRESETS.forEach(function (p) {
+        add('🎨 Theme: ' + p.name, 'theme', function () { applyPreset(p.id, true); });
+      });
+      add('🏪 Open points shop', 'action', function () { openShop(); });
+      add('⬇️ Export JSON', 'action', function () { exportBtn.click(); });
+      add('⌨️ Keyboard shortcuts', 'action', function () { helpPopover.showPopover(); });
+      const q = text.toLowerCase();
+      return out.filter(function (cmd) { return fuzzyMatch(q, cmd.label); });
+    }
+
+    function renderPaletteList() {
+      cmdkList.textContent = '';
+      if (!cmdkCommands.length) {
+        const li = document.createElement('li');
+        li.className = 'cmdk-empty';
+        li.textContent = 'No matches';
+        cmdkList.append(li);
+        cmdkInput.removeAttribute('aria-activedescendant');
+        return;
+      }
+      cmdkCommands.forEach(function (cmd, i) {
+        const li = document.createElement('li');
+        li.id = 'cmdk-item-' + i;
+        li.setAttribute('role', 'option');
+        li.setAttribute('aria-selected', i === cmdkActive ? 'true' : 'false');
+        li.dataset.index = String(i);
+        const label = document.createElement('span');
+        label.textContent = cmd.label;
+        const kind = document.createElement('span');
+        kind.className = 'cmdk-kind';
+        kind.textContent = cmd.kind;
+        li.append(label, kind);
+        cmdkList.append(li);
+      });
+      cmdkInput.setAttribute('aria-activedescendant', 'cmdk-item-' + cmdkActive);
+      const active = cmdkList.children[cmdkActive];
+      if (active && active.scrollIntoView) active.scrollIntoView({ block: 'nearest' });
+    }
+
+    function paintPalette(keepIndex) {
+      cmdkCommands = paletteCommands(cmdkInput.value);
+      cmdkActive = keepIndex ? Math.min(cmdkActive, cmdkCommands.length - 1) : 0;
+      if (cmdkActive < 0) cmdkActive = 0;
+      renderPaletteList();
+    }
+
+    function openPalette() {
+      if (!cmdk || !cmdk.hidden) return;
+      cmdkReturnFocus = document.activeElement;
+      cmdk.hidden = false;
+      cmdkInput.value = '';
+      paintPalette(false);
+      cmdkInput.focus();
+    }
+
+    function closePalette() {
+      if (!cmdk || cmdk.hidden) return;
+      cmdk.hidden = true;
+      const back = cmdkReturnFocus;
+      cmdkReturnFocus = null;
+      if (back && back.focus && document.contains(back)) back.focus();
+    }
+
+    function runPaletteCommand(index) {
+      const cmd = cmdkCommands[index];
+      if (!cmd) return;
+      closePalette();
+      cmd.run();
+    }
+
+    function movePalette(delta) {
+      if (!cmdkCommands.length) return;
+      cmdkActive = (cmdkActive + delta + cmdkCommands.length) % cmdkCommands.length;
+      renderPaletteList();
+    }
+
+    paletteBtn.addEventListener('click', openPalette);
+    cmdkInput.addEventListener('input', function () { paintPalette(false); });
+    cmdkInput.addEventListener('keydown', function (event) {
+      if (event.key === 'ArrowDown') { event.preventDefault(); movePalette(1); }
+      else if (event.key === 'ArrowUp') { event.preventDefault(); movePalette(-1); }
+      else if (event.key === 'Enter') { event.preventDefault(); runPaletteCommand(cmdkActive); }
+      else if (event.key === 'Escape') { event.preventDefault(); closePalette(); }
+      else if (event.key === 'Tab') { event.preventDefault(); }
+    });
+    cmdk.addEventListener('click', function (event) {
+      if (event.target.closest('[data-cmdk-close]')) { closePalette(); return; }
+      const item = event.target.closest('#cmdk-list li[data-index]');
+      if (item) runPaletteCommand(Number(item.dataset.index));
+    });
+
     // --- Tags: #word in text becomes a clickable chip ---
     function taskTags(text) {
       const tags = text.match(/#[\p{L}\p{N}_-]+/gu);
@@ -588,6 +779,14 @@
     document.addEventListener('keydown', function (event) {
       const typing = /^(INPUT|TEXTAREA)$/.test(document.activeElement.tagName) ||
         document.activeElement.isContentEditable;
+      const key = event.key.toLowerCase();
+      if ((event.ctrlKey || event.metaKey) && key === 'k') {
+        event.preventDefault();
+        if (cmdk.hidden) openPalette(); else closePalette();
+        return;
+      }
+      if (event.key === 'Escape' && !cmdk.hidden) { event.preventDefault(); closePalette(); return; }
+      if (!cmdk.hidden) return; // palette owns its own keys
       if (event.key === '/' && !typing) { event.preventDefault(); input.focus(); }
       else if (event.key === '?' && !typing) { helpPopover.togglePopover(); }
       else if ((event.key === 'j' || event.key === 'k') && !typing && !event.altKey && !event.ctrlKey && !event.metaKey) {
@@ -603,10 +802,16 @@
     // --- Add a task (shared by the button and the Enter key) ---
     // Natural input: "report p1 friday +College #work" sets project too.
     function addTask() {
-      const raw = input.value.trim(); // trim() ignores "   "-only input
-      if (raw === '') return;         // do nothing on empty input
+      addTaskFrom(); // no argument = read the composer (chips included)
+    }
 
-      const parsed = naturalPreview();
+    // Palette entry passes raw text; composer chips only apply to composer input.
+    function addTaskFrom(rawValue) {
+      const composer = rawValue === undefined;
+      const raw = String(composer ? input.value : rawValue).trim();
+      if (raw === '') return false; // do nothing on empty input
+
+      const parsed = composer ? naturalPreview() : naturalPreview(raw, '');
       const stamped = nowIso();
       const pid = activeProjectId();
       tasks.push({
@@ -621,16 +826,19 @@
       if (!saveTasks()) {
         tasks.pop();            // keep state identical to storage
         saveFailed = false;
-        note('Storage full — task not added. Your text is still in the box.');
+        note('Storage full — task not added. ' + (composer ? 'Your text is still in the box.' : 'Nothing was saved.'));
         refreshPreview();
-        return;
+        return false;
       }
-      input.value = '';  // clear the box for the next task
-      dueInput.value = ''; // clear the date too
-      clearNlp();
-      refreshPreview();
-      input.focus();     // keep the cursor ready for fast typing
+      if (composer) {
+        input.value = '';  // clear the box for the next task
+        dueInput.value = ''; // clear the date too
+        clearNlp();
+        refreshPreview();
+        input.focus();     // keep the cursor ready for fast typing
+      }
       renderView();
+      return true;
     }
     // Pure function of (raw, pickedDue, projectList, nowDate, skip): no DOM, no tasks.
     // nowDate is a Date used as "today" (fixed clock in tests).
@@ -792,8 +1000,12 @@
     function prioLabelNum(v) { return v === 3 ? 1 : v === 2 ? 2 : v === 1 ? 3 : v === 4 ? 4 : 0; }
     function clearNlp() { nlpSkip = {}; nlpEdit = {}; }
 
-    function naturalPreview() {
-      const p = parseNatural(input.value.trim(), dueInput.value, projects, undefined, nlpSkip);
+    function naturalPreview(rawOverride, pickedOverride) {
+      const raw = rawOverride === undefined ? input.value.trim() : String(rawOverride).trim();
+      const picked = pickedOverride === undefined ? dueInput.value : pickedOverride;
+      const composer = rawOverride === undefined;
+      const p = parseNatural(raw, picked, projects, undefined, composer ? nlpSkip : undefined);
+      if (!composer) return p; // palette entries ignore chip overrides
       if (nlpEdit.due !== undefined && !nlpSkip.due) { p.due = nlpEdit.due; p.dueExplicit = true; }
       if (nlpEdit.dueTime !== undefined && !nlpSkip.dueTime) p.dueTime = nlpEdit.dueTime;
       if (nlpEdit.prio !== undefined && !nlpSkip.prio) p.prio = nlpEdit.prio;

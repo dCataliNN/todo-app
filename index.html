@@ -29,7 +29,27 @@
             <span class="wallet-points" id="wallet-points">0</span>
           </span>
         </button>
+        <button id="palette-btn" class="palette-btn" aria-haspopup="dialog" aria-controls="cmdk" title="Command palette (Ctrl+K)">
+          <span aria-hidden="true">⌘</span><span class="palette-hint">K</span>
+        </button>
+        <button id="preset-btn" aria-haspopup="dialog" aria-controls="theme-menu" title="Theme presets" aria-label="Theme presets">🎨</button>
         <button id="theme-btn" aria-label="Toggle dark mode">🌙</button>
+      </div>
+    </div>
+
+    <div class="theme-menu" id="theme-menu" popover>
+      <strong>Themes</strong>
+      <div class="theme-grid" id="theme-grid"></div>
+      <p class="theme-note">tweakcn presets · light + dark follow the ☀️/🌙 toggle</p>
+    </div>
+
+    <div class="cmdk" id="cmdk" role="dialog" aria-modal="true" aria-labelledby="cmdk-input-label" hidden>
+      <div class="cmdk-scrim" data-cmdk-close></div>
+      <div class="cmdk-panel">
+        <label id="cmdk-input-label" class="cmdk-label">Command palette</label>
+        <input id="cmdk-input" type="text" placeholder="Search views, actions, or type a new task…" autocomplete="off" spellcheck="false">
+        <ul id="cmdk-list" role="listbox" aria-label="Commands"></ul>
+        <p class="cmdk-foot"><kbd>↑</kbd><kbd>↓</kbd> move · <kbd>Enter</kbd> run · <kbd>Esc</kbd> close</p>
       </div>
     </div>
 
@@ -80,7 +100,7 @@
         <input type="file" id="import-file" accept=".json,application/json" hidden>
         <div id="help-popover" popover>
           <strong>Shortcuts</strong>
-          <p><kbd>/</kbd> new task · <kbd>j</kbd>/<kbd>k</kbd> move between rows<br><kbd>Alt</kbd>+<kbd>↑</kbd>/<kbd>↓</kbd> reorder · <kbd>Enter</kbd> save · <kbd>Esc</kbd> cancel</p>
+          <p><kbd>/</kbd> new task · <kbd>Ctrl</kbd>+<kbd>K</kbd> command palette · <kbd>j</kbd>/<kbd>k</kbd> move between rows<br><kbd>Alt</kbd>+<kbd>↑</kbd>/<kbd>↓</kbd> reorder · <kbd>Enter</kbd> save · <kbd>Esc</kbd> cancel</p>
           <p><strong>Quick add:</strong> “Gym every monday at 19:00 #health” — try every day, every weekday, every 2 weeks, next week, in 3 days, 18:00, +Project, p1–p4.</p>
         </div>
         <ul id="task-list"></ul>
